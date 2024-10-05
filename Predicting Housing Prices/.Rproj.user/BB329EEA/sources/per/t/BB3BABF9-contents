@@ -1,0 +1,139 @@
+---
+title: 'Assignment 3: Philadelphia Household Travel Survey'
+author: "Luming Xu"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    latex_engine: xelatex
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, tidy.opts=list(width.cutoff=60),tidy=TRUE) 
+options(scipen=999)
+
+if (!dir.exists("data")){
+  dir.create("data")}
+```
+
+## Set up
+
+2012 Philadelphia Household Survey
+
+```{r load_data}
+hh <- read.csv("publicdb_release/DVRPC HTS Database Files/1_Household_Public.csv")
+per <- read.csv("publicdb_release/DVRPC HTS Database Files/2_Person_Public.csv")
+veh <- read.csv("publicdb_release/DVRPC HTS Database Files/3_Vehicle_Public.csv")
+trip <- read.csv("publicdb_release/DVRPC HTS Database Files/4_Trip_Public.csv")
+```
+
+## Q1
+
+Draw a random household from the second ten households in your data. Write a brief description of the household. Be sure to include: their income, race, composition, county of residence, and whether they own a car.
+
+```{r draw_random_household}
+sort(unique(hh$HH_ID))[sample(11:20, 1)]
+```
+
+```{r household_brief}
+per_hh <- merge(per,hh,by = "HH_ID", all.x = FALSE, all.y = FALSE, sort = FALSE)
+household <- subset(per_hh, per_hh$HH_ID == 101162)
+Q1 <- household[c("HH_ID","INCOME","RACE",
+           "PERSON_ID","HH_SIZE","GEND","AGECAT","EDUCA","HH_WORK","WK_STAT",
+           "H_COUNTY","TOT_VEH")]
+Q1
+write.table(Q1, file = 'data/Q1.csv', sep = ',')
+```
+
+## Q2
+
+Describe the daily activities and travel of the household’s members using the trip data.
+
+```{r household_activi}
+Q2 <- subset(trip[c(2,4,15,18,22,27:36,38:39,69,73)],HH_ID == 101162)
+Q2
+write.table(Q2, file = 'data/Q2.csv', sep = ',')
+```
+
+## Q3
+
+Provide an estimate of the total number of bicycle trips represented by the survey data.
+
+```{r bicycle_trips}
+Q3 <- sum(trip$P_WEIGHT[is.na(trip$MODE_AGG) == F & trip$MODE_AGG == 2])
+Q3
+# ?why still need "is.na(trip$MODE_AGG) == F"?? decimal?
+```
+
+## Q4
+
+Make a table that shows the mode choice for residents from the county of the household from question 1. 
+
+```{r mode_choice}
+library(tidyverse)
+per_hh_trip <- merge(per_hh, trip, by = "PERSON_ID", all.x = FALSE, all.y = FALSE, sort = FALSE)
+mode_choice <- per_hh_trip %>%
+  dplyr::select(H_COUNTY,HH_ID.x,PERSON_ID,MODE,MODE_AGG,P_WEIGHT.x) %>%
+  rename(HH_ID = HH_ID.x,
+         P_WEIGHT = P_WEIGHT.x)
+library(doBy)
+Q4 <- round(summaryBy(P_WEIGHT~MODE_AGG,
+                      data = subset(mode_choice, H_COUNTY == 34005 & !is.na(MODE_AGG)),
+                      FUN = sum),2)
+Q4 <- Q4 %>%
+  mutate('Percent (%)' = round(P_WEIGHT.sum/sum(mode_choice$P_WEIGHT[is.na(mode_choice$MODE_AGG) == F & mode_choice$H_COUNTY == 34005])*100,2))
+
+Q4
+write.table(Q4, file = 'data/Q4.csv', sep = ',')
+```
+
+## Q5
+
+```{r income_age}
+hh_veh <- merge(hh, veh, by = "HH_ID", all.x = FALSE, all.y = FALSE, sort = FALSE)
+hh_veh <- hh_veh %>%
+  filter(YEAR < 9998, INCOME < 98) %>%
+  mutate(AGE = 2024 - YEAR) %>%
+  dplyr::select(HH_ID, AGE, INCOME)
+
+library(ggplot2)
+ggplot(hh_veh, aes(x = as.factor(INCOME), y = AGE, fill = as.factor(INCOME))) +
+  geom_boxplot() +
+  scale_fill_grey(start = 0.9, end = 0.3,
+    name = "Household Income",
+                    labels = c("$0 to $9,999", "$10,000 to $24,999","$25,000 to $34,999", "$35,000 to $49,999", "$50,000 to $74,999", "$75,000 to $99,999", "$100,000 to $149,999", "$150,000 to $199,999", "$200,000 to $249,999", "$250,000 or more")) +
+  xlab("Household Income") +
+  ylab("Age of a Household's Vehicle") +
+  theme_minimal()
+```
+
+## Q6
+
+Make a table or graphic that shows the relationship between household income and mode choice for all households.
+
+```{r income_mode}
+mode_hh <- per_hh_trip %>%
+  filter(!is.na(MODE_AGG)) %>%
+  group_by(HH_ID.x, MODE_AGG) %>%
+  summarise(MODE_HH = n()) %>%
+  ungroup() %>%
+  rename(HH_ID = HH_ID.x) %>%
+  group_by(HH_ID) %>%
+  mutate(MODE_WEIGHT = MODE_AGG*MODE_HH/sum(MODE_HH)) %>%
+  ungroup()
+hh_mode <- hh %>%
+  filter(INCOME < 98) %>%
+  dplyr::select(HH_ID, INCOME)
+mode_hh <- merge(mode_hh, hh_mode, by = "HH_ID")
+
+ggplot(mode_hh, aes(x = as.factor(INCOME), y = MODE_WEIGHT, fill = as.factor(INCOME))) +
+  geom_boxplot() +
+  scale_y_continuous(breaks = seq(1,7,1), limits = c(0,8),labels=c("1"="Walk","2"="Bike", "3"="Private Vehicle", "4"="Private Transit", "5"="Public Transit", "6"="School Bus", "7"="Other")) + 
+  scale_fill_grey(start = 0.9, end = 0.3,
+    name = "Household Income",
+                    labels = c("$0 to $9,999", "$10,000 to $24,999","$25,000 to $34,999", "$35,000 to $49,999", "$50,000 to $74,999", "$75,000 to $99,999", "$100,000 to $149,999", "$150,000 to $199,999", "$200,000 to $249,999", "$250,000 or more")) +
+  xlab("Household Income") +
+  ylab("Mode Choice") +
+  theme_minimal()
+
+```
+

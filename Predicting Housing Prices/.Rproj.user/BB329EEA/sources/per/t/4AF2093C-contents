@@ -1,0 +1,247 @@
+---
+title: "Predicting housing prices"
+author: "Guangze Sun & Luming Xu"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    theme: spacelab
+    toc_float: true
+    toc_depth: 2
+    code_folding: hide
+bibliography: references.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, cache = FALSE) 
+options(scipen=999)
+if (!dir.exists("data")){
+  dir.create("data")}
+
+# create an empty .bib file to hold references
+file.create("references.bib")
+
+# Load some libraries
+library(tidyverse)
+library(dplyr)
+library(lubridate)
+library(sf)
+library(spdep)
+library(caret)
+library(ckanr)
+library(FNN)
+library(grid)
+library(gridExtra)
+library(ggcorrplot) # plot correlation plot
+library(corrr)      # another way to plot correlation plot
+library(kableExtra)
+library(jtools)     # for regression model plots
+library(ggstance) # to support jtools plots
+library(ggpubr)    # plotting R^2 value on ggplot point scatter
+library(broom.mixed) # needed for effects plots
+```
+
+```{r setup, include=FALSE}
+
+source("https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/functions.r")
+
+palette5 <- c("#25CB10", "#5AB60C", "#8FA108", "#C48C04", "#FA7800")
+```
+
+# Introduction
+
++ What is the purpose of this project?
++ Why should we care about it?
++ What makes this a difficult exercise?
++ What is your overall modeling strategy?
++ Briefly summarize your results.
+
+# Data
+
+## Data Wrangling
+
++ Briefly describe your methods for gathering the data.
+
+Data Sources: [Philly neighborhoods (nhoods)](https://opendataphilly.org/datasets/philadelphia-neighborhoods/), [housing sales (studentData)](https://github.com/mafichman/musa_5080_2024/blob/main/Midterm/data/2023/studentData.geojson), [crime incidents (phillyCrimes)](https://metadata.phila.gov/#home/datasetdetails/5543868920583086178c4f8e/representationdetails/570e7621c03327dc14f4b68d/)
+
+```{r data}
+nhoods <- 
+  st_read("data/philadelphia-neighborhoods.geojson") %>%
+  st_transform('EPSG:2272')
+
+studentData <- 
+  st_read("data/studentData.geojson") %>%
+  st_transform('EPSG:2272')
+
+philly <- studentData[,c(74,75,48,3,10,11,14,15,16,17,18,19,20,21,22,23,26,34,35,38,43,44,49,50,55,58,59,60,61,65,66,69,71,72,76)]
+```
+
+```{r data_process}
+philly <- philly %>%
+  mutate(PricePerSq = philly$sale_price / philly$total_area) %>%
+  mutate(Age = 2024 - year_built)
+```
+
+**Crimes: 2023-2019 (xlm)**
+
+```{r crimes_data}
+# phillyCrimes_2023 <- read.csv("data/Crimes/2023incidents_part1_part2.csv") %>%
+#   dplyr::select(text_general_code, dispatch_date, lat, lng)
+# phillyCrimes_2022 <- read.csv("data/Crimes/2022incidents_part1_part2.csv") %>%
+#   dplyr::select(text_general_code, dispatch_date, lat, lng)
+# phillyCrimes_2021 <- read.csv("data/Crimes/2021incidents_part1_part2.csv") %>%
+#   dplyr::select(text_general_code, dispatch_date, lat, lng)
+# phillyCrimes_2020 <- read.csv("data/Crimes/2020incidents_part1_part2.csv") %>%
+#   dplyr::select(text_general_code, dispatch_date, lat, lng)
+# phillyCrimes_2019 <- read.csv("data/Crimes/2019incidents_part1_part2.csv") %>%
+#   dplyr::select(text_general_code, dispatch_date, lat, lng)
+# 
+# 
+# 
+# phillyCrimes <-
+#   rbind(phillyCrimes_2023,phillyCrimes_2022,phillyCrimes_2021,phillyCrimes_2020,phillyCrimes_2019) %>%
+#   mutate(dispatch_year = year(ymd(dispatch_date))) %>%
+#   dplyr::select(lat, lng) %>%
+#     na.omit() %>%
+#     st_as_sf(coords = c("lng", "lat"), crs = "EPSG:4326") %>%
+#     st_transform('EPSG:2272') %>%
+#     distinct()
+```
+
+```{r}
+st_write(phillyCrimes, dsn = 'data/phillyCrimes.geojson')
+
+phillyCrimes <- 
+  st_read("data/phillyCrimes.geojson")
+```
+
+
+```{r buffer_crime}
+philly$crimes.Buffer <- philly %>% 
+    st_buffer(660) %>% 
+    aggregate(mutate(phillyCrimes, counter = 1),., sum) %>%
+    pull(counter)
+```
+
+```{r crime_knn}
+philly <-
+  philly %>% 
+    mutate(
+      crime_nn1 = nn_function(st_coordinates(philly), 
+                              st_coordinates(phillyCrimes), k = 1),
+      
+      crime_nn2 = nn_function(st_coordinates(philly), 
+                              st_coordinates(phillyCrimes), k = 2), 
+      
+      crime_nn3 = nn_function(st_coordinates(philly), 
+                              st_coordinates(phillyCrimes), k = 3), 
+      
+      crime_nn4 = nn_function(st_coordinates(philly), 
+                              st_coordinates(phillyCrimes), k = 4), 
+      
+      crime_nn5 = nn_function(st_coordinates(philly), 
+                              st_coordinates(phillyCrimes), k = 5)) 
+```
+
+**transit (sgz)**
+
+## Exploratory analysis
+
++ Present a table of summary statistics with variable descriptions. Sort these variables by their category (internal characteristics, amenities/public services or spatial structure).
+
+```{r}
+stargazer(st_drop_geometry(philly), 
+          type = 'text', 
+          title = "Summary Statistics")
+```
+
++ Present a correlation matrix
+
+
+
++ Present 4 home price correlation scatterplots that you think are of interest. I’m going to look for interesting open data that you’ve integrated with the home sale observations.
+
+
++ Develop 1 map of your dependent variable (sale price)
+
+```{r price_map}
+ggplot() +
+  geom_sf(data = nhoods, fill = "grey40", na.rm = T) +
+  geom_sf(data = philly, aes(colour = q5(PricePerSq), na.rm = T), 
+          show.legend = "point", size = .75) +
+  scale_colour_manual(values = palette5,
+                   labels=qBr(philly,"PricePerSq"),
+                   name="Quintile\nBreaks") +
+  labs(title="Price Per Square Foot, Philadelphia") +
+  theme_void()
+```
+
++ Develop 3 maps of 3 of your most interesting independent variables.
++ Include any other maps/graphs/charts you think might be of interest.
+
+# Methods
+
+Briefly describe your method (remember who your audience is).
+
+# Results: Briefly interpret each in the context of the Zillow use case
+
++ Split the ‘toPredict’ == “MODELLING” into a training and test set. Provide a polished table of your training set lm summary results (coefficients, R2 etc).
++ Provide a polished table of mean absolute error and MAPE for a single test set. 
++ Provide the results of your cross-validation tests. This includes mean and standard deviation MAE. Do 100 folds and plot your cross-validation MAE as a histogram. Is your model generalizable to new data?
++ Plot predicted prices as a function of observed prices
++ Provide a map of your residuals for your test set. Include a Moran’s I test and a plot of the spatial lag in errors.
++ Provide a map of your predicted values for where ‘toPredict’ is both “MODELLING” and “CHALLENGE”.
++ Using the test set predictions, provide a map of mean absolute percentage error (MAPE) by neighborhood.
++ Provide a scatterplot plot of MAPE by neighborhood as a function of mean price by neighborhood.
++ Using tidycensus, split your study area into two groups (perhaps by race or income) and test your model’s generalizability. Is your model generalizable?
+
+# Discussion
+
+Is this an effective model? What were some of the more interesting variables?  How much of the variation in prices could you predict? Describe the more important features? Describe the error in your predictions?  According to your maps, could you account the spatial variation in prices?  Where did the model predict particularly well? Poorly? Why do you think this might be?
+
+# Conclusion
+
+Would you recommend your model to Zillow? Why or why not? How might you improve this model?
+
+
+
+### mapping
+
+```{r}
+library(mapview)
+mapview(nhoods)
+
+```
+
+#### mapping-sale_price
+
+
+
+
+#### mapping-crimes
+
+```{r map_crime}
+ggplot() + 
+  geom_sf(data = nhoods, fill = "grey40") +
+  stat_density2d(data = data.frame(st_coordinates(phillyCrimes.sf)), 
+                 aes(X, Y, fill = ..level.., alpha = ..level..),
+                 size = 0.01, bins = 40, geom = 'polygon') +
+  scale_fill_gradient(low = "#25CB10", high = "#FA7800", name = "Density") +
+  scale_alpha(range = c(0.00, 0.35), guide = "none") +
+  labs(title = "Density of Crime Insidents, Philadelphia") +
+  theme_void()
+```
+
+
+```{r}
+st_drop_geometry(philly) %>% 
+  dplyr::select(sale_price, total_area, total_livable_area, number_of_bedrooms, Age) %>%
+  filter(sale_price <= 1000000, Age < 500) %>%
+  gather(Variable, Value, -sale_price) %>% 
+   ggplot(aes(Value, sale_price)) +
+     geom_point(size = .5) + geom_smooth(method = "lm", se=F, colour = "#FA7800") +
+     facet_wrap(~Variable, ncol = 3, scales = "free") +
+     labs(title = "Price as a function of continuous variables") +
+     plotTheme()
+```
+

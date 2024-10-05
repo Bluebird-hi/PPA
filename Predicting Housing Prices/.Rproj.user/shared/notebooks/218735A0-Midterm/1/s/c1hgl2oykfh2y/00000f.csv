@@ -1,0 +1,3 @@
+"0","philly <- philly %>%"
+"0","  mutate(PricePerSq = philly$sale_price / philly$total_area) %>%"
+"0","  mutate(Age = 2024 - year_built)"

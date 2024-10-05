@@ -1,0 +1,6 @@
+"0","philly$crimes.Buffer <- philly %>% "
+"0","    st_buffer(660) %>% "
+"0","    aggregate(mutate(phillyCrimes, counter = 1),., sum) %>%"
+"0","    pull(counter)"
+"2","错误于FUN(X[[i]], ...): 'type'(character)参数无效
+"
