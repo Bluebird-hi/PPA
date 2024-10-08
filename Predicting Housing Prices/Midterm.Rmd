@@ -296,7 +296,7 @@ ggcorrplot(
   type="lower",
   insig = "blank", outline.col = "grey90") +  
     labs(title = "Correlation across numeric variables") +
-  theme(axis.text = element_text(size = 6))
+  theme(axis.text = element_text(size = 1))
 ```
 
 (exploratory analysis goes beyond just correlation. Keep in mind that good exploratory analysis adds valuable context, particularly for non-technical audiences. )
@@ -413,8 +413,10 @@ model_philly <- model_philly %>%
          number_of_bedrooms = as.factor(number_of_bedrooms))
 
 inTrain <- createDataPartition(
-              y = paste(model_philly$total_livable_area, model_philly$interior_condition,
-                        model_philly$building_code_description_new, model_philly$census_tract), 
+              y = paste(model_philly$general_construction, model_philly$interior_condition,
+                        model_philly$building_code_description_new,
+                        model_philly$parcel_shape,model_philly$topography,model_philly$fuel,
+                        model_philly$garage_spaces,model_philly$quality_grade), 
               p = .60, list = FALSE)
 # [row,column] select all columns
 philly.training <- model_philly[inTrain,] 
@@ -513,44 +515,66 @@ hist(reg.cv$resample[,3],
      ylab = 'count')
 ```
 
-+ Provide a map of your residuals for your test set. Include a Moran’s I test and a plot of the spatial lag in errors. (卡住了)
++ Provide a map of your residuals for your test set. Include a Moran’s I test and a plot of the spatial lag in errors.
 
 ```{r}
-coords <- st_coordinates(model_philly) 
-# create a list of 5 nearest neighbors
-neighborList <- knn2nb(knearneigh(coords, 5))
+philly.test_predict <-
+  philly.test[which(philly.test$sale_price.Error != 0),]
 
-spatialWeights <- nb2listw(neighborList, style="W")
-model_philly$lagPrice <- lag.listw(spatialWeights, model_philly$sale_price)
+coords.test <-  st_coordinates(philly.test_predict) 
 
-coords.test <-  st_coordinates(philly.test) 
 neighborList.test <- knn2nb(knearneigh(coords.test, 5))
+
 spatialWeights.test <- nb2listw(neighborList.test, style="W")
-# compare 
-philly.test %>% 
-  mutate(lagPriceError = lag.listw(spatialWeights.test, sale_price.Error)) %>%
-  ggplot(aes(x =lagPriceError, y =sale_price.Error))+
-  geom_point(aes(x =lagPriceError, y =sale_price.Error), color = "orange") +
-  labs(title = "Spatial Lag of Sale Price Error",
-       x = "Lag of Sale Price Error",
-       y = "Sale Price Error") +
-  geom_smooth(method="lm")
+philly.test_predict$lagPriceError <- lag.listw(spatialWeights.test, philly.test_predict$sale_price.Error)
+```
+
+```{r}
+cor_error <- cor(philly.test_predict$lagPriceError, philly.test_predict$sale_price.Error, method = "pearson")
+ggplot(philly.test_predict, aes(x = lagPriceError, y = sale_price.Error))+
+     geom_point(size = .5, color = "#6D9EC1") + geom_smooth(method = "lm", se=F, colour = "#E46726") +
+     labs(title = "Error as a function of the spatial lag of price",
+          x = "Spatial lag of errors (Mean error of 5 nearest neighbors)", y = "Sale Price") +
+  annotate(geom = "text", label = paste("Pearson Correlation:", round(cor_error, 3)), # Insert correlation here
+    x = -800000, y = -1000000, 
+    hjust = 0, vjust = 2, 
+    size = 6) +
+     theme_minimal() +
+  theme(plot.title = element_text(hjust = 0, size = 16))
+```
+
+```{r}
+ggplot() +
+  geom_sf(data = nhoods, fill = "grey90") +
+  geom_sf(data = philly.test_predict, aes(colour = q5(lagPriceError)),
+          show.legend = "point", size = .75) +
+  scale_colour_manual(values = palette5,
+                   labels=qBr(philly.test_predict,"lagPriceError"),
+                   name="Quintile\nBreaks") +
+  labs(title="A map of spatial lag in errors") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme_void()
+
 ```
 
 
 ```{r}
-moranTest <- moran.mc(philly.test_predict$price.Error, 
+philly.test_nonzero <- philly.test %>%
+  filter(sale_price.Error != 0)
+moranTest <- moran.mc(philly.test_nonzero$sale_price.Error, 
                       spatialWeights.test, nsim = 999)
 
 ggplot(as.data.frame(moranTest$res[c(1:999)]), aes(moranTest$res[c(1:999)])) +
   geom_histogram(binwidth = 0.01) +
-  geom_vline(aes(xintercept = moranTest$statistic), colour = "#FA7800",size=1) +
+  geom_vline(aes(xintercept = moranTest$statistic), colour = "#E46726",size=1) +
   scale_x_continuous(limits = c(-1, 1)) +
   labs(title="Observed and permuted Moran's I",
        subtitle= "Observed Moran's I in orange",
        x="Moran's I",
        y="Count") +
-  plotTheme()
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0, size = 16),
+        plot.subtitle = element_text(size = 10, face = "italic"))
 ```
 
 
@@ -559,7 +583,6 @@ ggplot(as.data.frame(moranTest$res[c(1:999)]), aes(moranTest$res[c(1:999)])) +
 ```{r}
 
 ```
-
 
 + Using the test set predictions, provide a map of mean absolute percentage error (MAPE) by neighborhood.
 + Provide a scatterplot plot of MAPE by neighborhood as a function of mean price by neighborhood.
