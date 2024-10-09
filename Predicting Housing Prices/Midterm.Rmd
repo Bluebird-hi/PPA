@@ -12,12 +12,13 @@ output:
 bibliography: references.bib
 ---
 
-```{r setup, include=FALSE}
+```{r setup, message = FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, cache = FALSE) 
 options(scipen=999)
 
 # Load some libraries
 library(tidyverse)
+library(tidycensus)
 library(dplyr)
 library(lubridate)
 library(sf)
@@ -37,7 +38,7 @@ library(ggpubr)    # plotting R^2 value on ggplot point scatter
 library(broom.mixed) # needed for effects plots
 ```
 
-```{r setup2, include=FALSE}
+```{r setup2, echo = FALSE}
 
 source("https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/functions.r")
 
@@ -60,7 +61,7 @@ palette5 <- c("#25CB10", "#5AB60C", "#8FA108", "#C48C04", "#FA7800")
 
 Data Sources: [Philly neighborhoods (nhoods)](https://opendataphilly.org/datasets/philadelphia-neighborhoods/), [housing sales (studentData)](https://github.com/mafichman/musa_5080_2024/blob/main/Midterm/data/2023/studentData.geojson), [crime incidents (phillyCrimes)](https://metadata.phila.gov/#home/datasetdetails/5543868920583086178c4f8e/representationdetails/570e7621c03327dc14f4b68d/)
 
-```{r data, include = FALSE}
+```{r data, echo = FALSE}
 nhoods <- 
   st_read("data/philadelphia-neighborhoods.geojson") %>%
   st_transform('EPSG:2272')
@@ -81,7 +82,10 @@ descriptions <- descriptions %>%
 philly <- philly %>%
   mutate(PricePerSq = philly$sale_price / philly$total_area) %>%
   mutate(Age = 2024 - year_built) %>%
-  dplyr::select(- year_built)
+  dplyr::select(- year_built) %>%
+  mutate(Age = case_when(Age == 2024 ~ mean(Age, na.rm = T),
+        TRUE ~ Age)) %>%
+  st_join(nhoods["NAME"])
 
 descriptions <- rbind(descriptions,
                       data.frame(
@@ -449,7 +453,7 @@ philly.test <-
          sale_price.Predict = predict(reg.training, philly.test),
          sale_price.Error = sale_price.Predict - sale_price,
          sale_price.AbsError = abs(sale_price.Predict - sale_price),
-         sale_price.APE = (abs(sale_price.Predict - sale_price)) / sale_price.Predict) %>%
+         sale_price.APE = (abs(sale_price.Predict - sale_price)) / sale_price) %>%
   filter(sale_price < 5000000)
 
 MAE <- mean(philly.test$sale_price.AbsError, na.rm = T)
@@ -577,16 +581,122 @@ ggplot(as.data.frame(moranTest$res[c(1:999)]), aes(moranTest$res[c(1:999)])) +
         plot.subtitle = element_text(size = 10, face = "italic"))
 ```
 
+## Generalizability - test across urban contexts
+
++ Using the test set predictions, provide a map of mean absolute percentage error (MAPE) by neighborhood.
+
+```{r}
+nhoods <- st_drop_geometry(philly.test) %>%
+  group_by(NAME) %>%
+  summarise(mean.MAPE = mean(sale_price.APE, na.rm = T)) %>%
+  ungroup() %>%
+  left_join(nhoods) %>%
+  st_sf()
+
+ggplot(nhoods) +
+  geom_sf(aes(fill = mean.MAPE), color = "grey90") +
+  scale_fill_gradient(low = "#6D9EC1", high = "#E46726", name = "MAPE") +
+  labs(title = "Mean test set MAPE by neighborhood") +
+  theme_void()
+```
+
+
++ Provide a scatterplot plot of MAPE by neighborhood as a function of mean price by neighborhood.
+
+```{r}
+nhoods <- left_join(nhoods,
+  st_drop_geometry(philly.test) %>%
+    group_by(NAME) %>%
+    summarise(meanPrice = mean(sale_price, na.rm = T))
+) 
+ggplot(data = st_drop_geometry(nhoods)) +
+  geom_point(aes(x = meanPrice, y = mean.MAPE), size = 2, color = "#E46726", alpha = 0.7) +
+  labs(title = "MAPE as a function of mean price by neighborhood",
+       x = "Mean Price by Neighborhood",
+       y = "MAPE by Neighborhood") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 18, face = "bold"))
+```
+
++ Using tidycensus, split your study area into two groups (perhaps by race or income) and test your model’s generalizability. Is your model generalizable?
+
+```{r}
+census_api_key("e62580f74ef222beadd9dd2fbaf48ff130b31c4a", overwrite = TRUE)
+acs_variable_list.2022 <- load_variables(2022, #year
+                                         "acs5", #five year ACS estimates
+                                         cache = TRUE)
+```
+```{r include = FALSE}
+tracts22 <- get_acs(geography = "tract",
+                    variables = c("B01003_001E", "B01001A_001E","B06011_001E"), 
+                    year=2022, 
+                    state=42, 
+                    county=101, 
+                    geometry=TRUE, 
+                    output="wide") %>%
+  st_transform('EPSG:2272') %>%
+  rename(TotalPop = B01003_001E, 
+         TotalWhites = B01001A_001E,
+         MedInc = B06011_001E) %>%
+  dplyr::select(-NAME, -starts_with("B")) %>%
+  mutate(year = "2022",
+         percentWhite = TotalWhites / TotalPop,
+         raceContext = ifelse(percentWhite > .5, "Majority White", "Majority Non-White"),
+         incomeContext = ifelse(MedInc > 32322, "High Income", "Low Income"))
+```
+
+```{r}
+grid.arrange(ncol = 2,
+  ggplot() + geom_sf(data = na.omit(tracts22), aes(fill = raceContext), color = "grey90") +
+    scale_fill_manual(values = c("#6D9EC1", "#E46726"), name="Race Context") +
+    labs(title = "Race Context") +
+    mapTheme() + theme(legend.position="bottom"), 
+  ggplot() + geom_sf(data = na.omit(tracts22), aes(fill = incomeContext), color = "grey90") +
+    scale_fill_manual(values = c("#6D9EC1", "#E46726"), name="Income Context") +
+    labs(title = "Income Context") +
+    mapTheme() + theme(legend.position="bottom"))
+```
+
+```{r}
+race_table <- st_join(philly.test, tracts22) %>%
+  group_by(raceContext) %>%
+  summarise(mean.MAPE = scales::percent(mean(sale_price.APE, na.rm = T))) %>%
+  st_drop_geometry() %>%
+  spread(raceContext, mean.MAPE) %>%
+  dplyr::select(-"<NA>")
+income_table <- st_join(philly.test, tracts22) %>%
+  group_by(incomeContext) %>%
+  summarise(mean.MAPE = scales::percent(mean(sale_price.APE, na.rm = T))) %>%
+  st_drop_geometry() %>%
+  spread(incomeContext, mean.MAPE) %>%
+  dplyr::select(-"<NA>")
+bind_cols(race_table, income_table) %>%
+  mutate(MAPE = scales::percent(MAPE)) %>%
+  kable(caption = "Test set MAPE by neighborhood racial and income context") %>% kable_styling(full_width = F)
+```
+
+
+## Challenge time
 
 + Provide a map of your predicted values for where ‘toPredict’ is both “MODELLING” and “CHALLENGE”.
 
 ```{r}
-
+# philly_finish <- philly %>%
+#   mutate(sale_price.Predict = predict(reg.training, philly))
+# ```
+# 
+# ```{r}
+# ggplot() +
+#   geom_sf(data = nhoods, fill = "grey40", na.rm = T) +
+#   geom_sf(data = philly_finish, aes(colour = q5(sale_price.Predict), na.rm = T), 
+#           show.legend = "point", size = .75) +
+#   scale_colour_manual(values = palette5,
+#                    labels=qBr(philly_finish,"sale_price.Predict"),
+#                    name="Quintile\nBreaks") +
+#   labs(title="Predicted Values, Philadelphia") +
+#   theme_void()
 ```
 
-+ Using the test set predictions, provide a map of mean absolute percentage error (MAPE) by neighborhood.
-+ Provide a scatterplot plot of MAPE by neighborhood as a function of mean price by neighborhood.
-+ Using tidycensus, split your study area into two groups (perhaps by race or income) and test your model’s generalizability. Is your model generalizable?
 
 # Discussion
 
