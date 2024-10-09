@@ -19,6 +19,7 @@ options(scipen=999)
 # Load some libraries
 library(tidyverse)
 library(tidycensus)
+library(stringr)
 library(dplyr)
 library(lubridate)
 library(sf)
@@ -38,7 +39,7 @@ library(ggpubr)    # plotting R^2 value on ggplot point scatter
 library(broom.mixed) # needed for effects plots
 ```
 
-```{r setup2, echo = FALSE}
+```{r setup2, message = FALSE}
 
 source("https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/functions.r")
 
@@ -59,7 +60,7 @@ palette5 <- c("#25CB10", "#5AB60C", "#8FA108", "#C48C04", "#FA7800")
 
 + Briefly describe your methods for gathering the data.
 
-Data Sources: [Philly neighborhoods (nhoods)](https://opendataphilly.org/datasets/philadelphia-neighborhoods/), [housing sales (studentData)](https://github.com/mafichman/musa_5080_2024/blob/main/Midterm/data/2023/studentData.geojson), [crime incidents (phillyCrimes)](https://metadata.phila.gov/#home/datasetdetails/5543868920583086178c4f8e/representationdetails/570e7621c03327dc14f4b68d/)
+Data Sources: [Philly neighborhoods (nhoods)](https://opendataphilly.org/datasets/philadelphia-neighborhoods/), [housing sale prices (studentData)](https://github.com/mafichman/musa_5080_2024/blob/main/Midterm/data/2023/studentData.geojson), [crime incidents (phillyCrimes)](https://metadata.phila.gov/#home/datasetdetails/5543868920583086178c4f8e/representationdetails/570e7621c03327dc14f4b68d/)
 
 ```{r data, echo = FALSE}
 nhoods <- 
@@ -69,6 +70,41 @@ nhoods <-
 studentData <- 
   st_read("data/studentData.geojson") %>%
   st_transform('EPSG:2272')
+
+# school <- 
+#   st_read("https://opendata.arcgis.com/datasets/d46a7e59e2c246c891fbee778759717e_0.geojson") %>%
+#   st_transform('EPSG:2272')
+# 
+# hospital <- 
+#   st_read("data/DOH_Hospitals202311.geojson") %>%
+#   st_transform('EPSG:2272')
+# 
+# metro <- 
+#   st_read("https://opendata.arcgis.com/api/v3/datasets/af52d74b872045d0abb4a6bbbb249453_0/downloads/data?format=geojson&spatialRefId=4326") %>%
+#   st_transform('EPSG:2272')
+# 
+# trolley <- 
+#     st_read("https://opendata.arcgis.com/api/v3/datasets/dd2afb618d804100867dfe0669383159_0/downloads/data?format=geojson&spatialRefId=4326") %>%
+#   st_transform('EPSG:2272')
+# 
+# park <- 
+#   st_read("https://opendata.arcgis.com/datasets/d52445160ab14380a673e5849203eb64_0.geojson") %>%
+#   st_transform('EPSG:2272')
+# 
+# water <- 
+#   st_read("https://services.arcgis.com/fLeGjb7u4uXqeF9q/arcgis/rest/services/Hydrographic_Features_Poly/FeatureServer/1/query?outFields=*&where=1%3D1&f=geojson") %>%
+#   st_transform('EPSG:2272')
+# 
+# retail <- 
+#   st_read("https://opendata.arcgis.com/datasets/53b8a1c653a74c92b2de23a5d7bf04a0_0.geojson") %>%
+#   st_transform('EPSG:2272')
+# 
+# census_tract <- 
+#   st_read("data/tl_2022_42_tract/tl_2022_42_tract.shp") %>%
+#   st_transform('EPSG:2272')
+# 
+# census <- 
+#   read.csv("data/census.csv")
 
 descriptions <- read.csv("data/data dictonary-studentdata.csv")
 set <- read.csv("data/set.csv")
@@ -94,8 +130,6 @@ descriptions <- rbind(descriptions,
 descriptions <- descriptions %>%
   filter(Field.Name != "year_built")
 ```
-
-
 
 ## Feature Engineering
 
@@ -157,9 +191,40 @@ philly <-
 **Other data (sgz)**
 
 ```{r}
+# city_hall <- metro[metro$Station == 'City Hall', 6]
+# school_elem <- school %>%
+#   filter(str_detect(GRADE_LEVEL, "ELEMENTARY"))
+# 
+# census <- census %>%
+#   mutate(across(3:8, ~ as.numeric(as.character(.)))) %>%
+#   mutate(NAMELSAD = str_extract(NAME, "^[^;]+")) %>%
+#   select(NAMELSAD, 3:8)
+# 
+# calculate_nearest_distance <- function(set_points, other_layer) {
+#   nearest_idx <- st_nearest_feature(set_points, other_layer)
+#   st_distance(set_points, other_layer[nearest_idx, ], by_element = TRUE) %>% as.numeric()
+# }
+# set2 <- studentData[,74:76] %>%
+#   mutate(distance_to_city_hall = st_distance(., city_hall) %>% as.numeric()) %>%
+#   mutate(
+#     distance_to_nearest_metro = calculate_nearest_distance(geometry, metro),
+#     distance_to_nearest_hospital = calculate_nearest_distance(geometry, hospital),
+#     distance_to_nearest_school = calculate_nearest_distance(geometry, school_elem),
+#     distance_to_nearest_park = calculate_nearest_distance(geometry, park),
+#     distance_to_nearest_water = calculate_nearest_distance(geometry, water)
+#   )
+# set2 <- set %>%
+#   st_join(census_tract["NAMELSAD"]) %>%
+#   left_join(census, by = "NAMELSAD") %>% 
+#   st_join(retail[, c("LPSS_PER1000", "HPSS_PER1000")])
+```
+
+
+```{r}
 philly_set <- merge(philly, set, by = "musaID", all.x = FALSE, all.y = FALSE, sort = FALSE) %>%
   dplyr::select(-toPredict.y) %>%
-  rename(toPredict = toPredict.x)
+  rename(toPredict = toPredict.x) %>%
+  mutate(dist1 = ifelse(distance_to_city_hall <= 20000, distance_to_city_hall, 20000))
 philly <- philly_set
 ```
 
@@ -387,6 +452,191 @@ ggscatter(cor_philly,
         plot.subtitle = element_text(size = 12)) 
 ```
 
+## data再处理
+
+```{r}
+philly_fac <- philly %>%
+  mutate(
+    basements = case_when(
+      basements %in% c("0", "1", "4", "A") ~ "B",   
+      TRUE ~ "A"                               
+    ),
+    basements = factor(basements)              
+  )
+
+philly_fac <- philly_fac %>%
+  mutate(
+    central_air = case_when(
+      central_air %in% c("1", "Y") ~ "Y",  
+      TRUE ~ "N"                          
+    ),
+    central_air = factor(central_air)      
+  )
+
+philly_fac <- philly_fac %>%
+  mutate(
+    exterior_condition = case_when(
+      is.na(exterior_condition) | exterior_condition == 1 ~ "1",    
+      exterior_condition %in% c(2, 3) ~ "2",                        
+      exterior_condition == 4 ~ "3",                                
+      TRUE ~ "4"                      
+    ),
+    exterior_condition = factor(exterior_condition)                 
+  )
+
+philly_fac <- philly_fac %>%
+  mutate(
+    fireplaces = case_when(
+      is.na(fireplaces) | fireplaces == 0 | fireplaces == 1 ~ "0",                    
+      TRUE ~ "1"                                
+    ),
+    fireplaces = factor(fireplaces)             
+  )
+
+philly_fac <- philly_fac %>%
+  mutate(
+    fuel = case_when(
+      is.na(fuel) | fuel == "" ~ "X",  
+      TRUE ~ "A"                       
+    ),
+    fuel = factor(fuel)                
+  )
+
+philly_fac <- philly_fac %>%
+  mutate(
+    garage_spaces = case_when(
+      is.na(garage_spaces) | garage_spaces == 0 ~ "0",    
+      garage_spaces == 1 ~ "1",      
+      TRUE ~ "2"                     
+    ),
+    garage_spaces = factor(garage_spaces)  
+  )
+
+philly_fac <- philly_fac %>%
+  mutate(
+    general_construction = case_when(       
+      general_construction %in% c("A ", "B ", "D ") ~ "A",  
+      general_construction == "3 " ~ "C",        
+      TRUE ~ "B"                                 
+    ),
+    general_construction = factor(general_construction)  
+  )
+
+philly_fac <- philly_fac %>%
+  mutate(
+    interior_condition = case_when(
+      interior_condition %in% c(0, 1, 2, 3) ~ "1",         
+      interior_condition %in% c(4, NA) ~ "2",        
+      TRUE ~ "3"       
+    ),
+    interior_condition = factor(interior_condition)  
+  )
+
+philly_fac <- philly_fac %>%
+  mutate(
+    number_of_bathrooms = case_when(
+      number_of_bathrooms == 0 ~ "0",                   
+      number_of_bathrooms == 1 ~ "1",                   
+      number_of_bathrooms %in% c(2, NA) ~ "2",          
+      number_of_bathrooms == 3 ~ "3",                   
+      TRUE ~ "4"                                        
+    ),
+    number_of_bathrooms = factor(number_of_bathrooms)   
+  )
+
+philly_fac <- philly_fac %>%
+  mutate(
+    number_of_bedrooms = case_when(
+      number_of_bedrooms %in% c(0, 31) | is.na(number_of_bedrooms) ~ "0",  
+      number_of_bedrooms %in% c(1, 2) ~ "1",    
+      number_of_bedrooms == 3 ~ "2",            
+      number_of_bedrooms == 4 ~ "3",            
+      number_of_bedrooms %in% c(5, 6) ~ "4",    
+      number_of_bedrooms %in% c(7, 8, 9) ~ "5", 
+    ),
+    number_of_bedrooms = factor(number_of_bedrooms)  
+  )
+
+philly_fac <- philly_fac %>%
+  mutate(
+    parcel_shape = case_when(
+      parcel_shape %in% c("C", "E") ~ "A",  
+      parcel_shape == "A" ~ "B",            
+      TRUE ~ "C"                            
+    ),
+    parcel_shape = factor(parcel_shape)     
+  )
+
+philly_fac <- philly_fac %>%
+  mutate(
+    quality_grade = case_when(
+      quality_grade %in% c("A+", "A", "A-", "X", "X-") ~ "1",           
+      quality_grade %in% c("B+", "B", "B-", "3", "S+") ~ "2",
+      TRUE ~ "3"                                             
+    ),
+    quality_grade = factor(quality_grade)                    
+  )
+
+philly_fac <- philly_fac %>%
+  mutate(
+    separate_utilities = case_when(
+      separate_utilities %in% c("A", "C") ~ "B",  
+      TRUE ~ "A"                                 
+    ),
+    separate_utilities = factor(separate_utilities)  
+  )
+
+philly_fac <- philly_fac %>%
+  mutate(
+    street_direction = case_when(
+      is.na(street_direction) | street_direction == "" | street_direction == "S" ~ "A",
+      TRUE ~ "B"                           
+    ),
+    street_direction = factor(street_direction)  
+  )
+
+philly_fac <- philly_fac %>%
+  mutate(
+    topography = case_when(
+      topography == "B" ~ "B",
+      TRUE ~ "A"
+    ),
+    topography = factor(topography)        
+  )
+
+philly_fac <- philly_fac %>%
+  mutate(
+    type_heater = case_when(
+      type_heater == "D" ~ "B",            
+      TRUE ~ "A"                           
+    ),
+    type_heater = factor(type_heater)      
+  )
+
+philly_fac <- philly_fac %>%
+  mutate(
+    building_code_description_new = case_when(
+      building_code_description_new %in% c("COLONIAL", "OLD STYLE", "ROW MODERN", "ROW OLD STYLE", "TUDOR", "TWIN BUNGALOW") ~ "1",
+      building_code_description_new %in% c("ROW POST WAR", "ROW TYPICAL", "TWIN CONVENTIONAL") ~ "3",
+      building_code_description_new %in% c("OTHER", "ROW PORCH FRONT") ~ "4",
+      TRUE ~ "2"  
+    ),
+    building_code_description_new = factor(building_code_description_new)  
+  )
+
+philly <- philly_fac %>%
+  mutate(exterior_condition = as.factor(exterior_condition),
+         fireplaces = as.factor(fireplaces),
+         garage_spaces = as.factor(garage_spaces),
+         garage_type = as.factor(garage_type),
+         interior_condition = as.factor(interior_condition),
+         number_of_bathrooms = as.factor(number_of_bathrooms),
+         number_of_bedrooms = as.factor(number_of_bedrooms))
+
+model_philly <- philly %>%
+  filter(toPredict == "MODELLING")
+```
+
 
 # Methods
 
@@ -407,20 +657,12 @@ e)  software
 **paste种类和数量少的variable**
 
 ```{r}
-model_philly <- model_philly %>%
-  mutate(exterior_condition = as.factor(exterior_condition),
-         fireplaces = as.factor(fireplaces),
-         garage_spaces = as.factor(garage_spaces),
-         garage_type = as.factor(garage_type),
-         interior_condition = as.factor(interior_condition),
-         number_of_bathrooms = as.factor(number_of_bathrooms),
-         number_of_bedrooms = as.factor(number_of_bedrooms))
-
 inTrain <- createDataPartition(
               y = paste(model_philly$general_construction, model_philly$interior_condition,
                         model_philly$building_code_description_new,
                         model_philly$parcel_shape,model_philly$topography,model_philly$fuel,
-                        model_philly$garage_spaces,model_philly$quality_grade), 
+                        model_philly$garage_spaces,model_philly$quality_grade,
+                        model_philly$NAME), 
               p = .60, list = FALSE)
 # [row,column] select all columns
 philly.training <- model_philly[inTrain,] 
@@ -428,16 +670,15 @@ philly.test <- model_philly[-inTrain,]
 ```
 
 ```{r}
-reg.training <- lm(sale_price ~.,data = st_drop_geometry(philly.training) %>%
-                  dplyr::select(sale_price, depth, frontage, off_street_open, total_area, total_livable_area, Age, crime_nn3,
-                                basements, central_air, exterior_condition, fireplaces, fuel, garage_spaces, garage_type, 
-                                general_construction,interior_condition, number_of_bathrooms, number_of_bedrooms, parcel_shape, 
-                                quality_grade, separate_utilities, sewer, street_direction, topography, type_heater, view_type, 
-                                building_code_description_new,
-                                distance_to_city_hall, distance_to_nearest_metro, distance_to_nearest_hospital, distance_to_nearest_school,
-                distance_to_nearest_park, distance_to_nearest_water, Percent_Bachelor.s.degree.or.higher,
-                Estimate_Mean.family.income..dollars.,Percent_Management..business..science..and.arts.occupations,
-                Percent_Different.state,Percent_With.private.health.insurance,Percent_White.alone,LPSS_PER1000,HPSS_PER1000))
+reg.training <- lm(sale_price ~ 
+    depth + log(frontage+1) + log(total_area+1) + total_livable_area + log(crime_nn3) + 
+    log(dist1+1) +log(distance_to_city_hall+1) + Estimate_Mean.family.income..dollars. + 
+    Percent_White.alone + log(distance_to_nearest_water+1) + HPSS_PER1000 +
+    central_air + exterior_condition + fireplaces + garage_spaces + general_construction + 
+    interior_condition + number_of_bathrooms + number_of_bedrooms + quality_grade + 
+    separate_utilities + topography + building_code_description_new + 
+    NAME,
+    data = st_drop_geometry(philly.training))
 
 stargazer(reg.training, type = "text",title="Regression Results",align=TRUE,no.space=TRUE)
 ```
@@ -470,10 +711,13 @@ ggplot(
   geom_point(size = .5) + 
   geom_smooth(method = "lm", se=F, colour = "#6D9EC1") +
   geom_abline(intercept = 0, slope = 1, color="#E46726",size=1) +
-  labs(title = 'Predicted sale price as a function of observed price', subtitle = 'Red line represents a perfect prediction;\nBlue line represents prediction') +
+  labs(title = 'Predicted sale price as a function of observed price', 
+       subtitle = 'Red line represents a perfect prediction; blue line represents average prediction.',
+       x = "Predicted Sale Price",
+       y = "Observed Sale Price") +
   theme_minimal() +
-  theme(plot.title = element_text(hjust = 0, size = 16),
-        plot.subtitle = element_text(size = 10, face = "italic"))
+  theme(plot.title = element_text(size = 18, face = "bold"),
+        plot.subtitle = element_text(size = 12))
 ```
 
 ## Generalizability - Cross-validation
@@ -485,17 +729,16 @@ fitControl <- trainControl(method = "cv", number = 100)
 set.seed(825)
 
 reg.cv <- 
-  train(sale_price ~ ., data = st_drop_geometry(model_philly) %>% 
-          dplyr::select(sale_price, depth, frontage, off_street_open, total_area, total_livable_area, Age, crime_nn3,
-                                basements, central_air, exterior_condition, fireplaces, fuel, garage_spaces, garage_type, 
-                                general_construction,interior_condition, number_of_bathrooms, number_of_bedrooms, parcel_shape, 
-                                quality_grade, separate_utilities, sewer, street_direction, topography, type_heater, view_type, 
-                                building_code_description_new,
-                        distance_to_city_hall, distance_to_nearest_metro, distance_to_nearest_hospital, distance_to_nearest_school,
-                distance_to_nearest_park, distance_to_nearest_water, Percent_Bachelor.s.degree.or.higher,
-                Estimate_Mean.family.income..dollars.,Percent_Management..business..science..and.arts.occupations,
-                Percent_Different.state,Percent_With.private.health.insurance,Percent_White.alone,LPSS_PER1000,HPSS_PER1000),
-        method = "lm", trControl = fitControl, na.action = na.pass)
+  train(sale_price ~ 
+    depth + log(frontage+1) + log(total_area+1) + total_livable_area + log(crime_nn3) + 
+    log(dist1+1) +log(distance_to_city_hall+1) + Estimate_Mean.family.income..dollars. + 
+    Percent_White.alone + log(distance_to_nearest_water+1) + HPSS_PER1000 +
+    central_air + exterior_condition + fireplaces + garage_spaces + general_construction + 
+    interior_condition + number_of_bathrooms + number_of_bedrooms + quality_grade + 
+    separate_utilities + topography + building_code_description_new + 
+    NAME,
+    data = st_drop_geometry(model_philly),
+    method = "lm", trControl = fitControl, na.action = na.pass)
 
 reg.cv
 ```
@@ -507,16 +750,21 @@ stat_MAE <- data.frame(Mean, SD)
 kable(stat_MAE) %>% kable_styling(full_width = F)
 ```
 
-**改用ggplot**
-
 (If the model generalized well, the distribution of errors would cluster tightly together.)
 
 ```{r}
-hist(reg.cv$resample[,3], 
-     breaks = 50, 
-     main = 'Distribution of MAE \nK fold cross validation (k=100)', 
-     xlab = 'Mean Absolute Error', 
-     ylab = 'count')
+ggplot(data = data.frame(MAE = reg.cv$resample[,3]),aes(x = MAE)) +
+  geom_histogram(color = "white", fill = "#6D9EC1") +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 50),
+                     labels = function(x) ifelse(x %% 5000 == 0, x, "")) +
+  labs(title = "Distribution of MAE", 
+       subtitle = "K fold cross validation; k=100.",
+       x = "Mean Absolute Error") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 18, face = "bold"),
+        plot.subtitle = element_text(size = 12)) +
+  geom_vline(aes(xintercept=mean(MAE, na.rm=T)),   # Ignore NA values for mean
+               color="#E46726", linetype="dashed", size=1)
 ```
 
 + Provide a map of your residuals for your test set. Include a Moran’s I test and a plot of the spatial lag in errors.
@@ -542,9 +790,9 @@ ggplot(philly.test_predict, aes(x = lagPriceError, y = sale_price.Error))+
   annotate(geom = "text", label = paste("Pearson Correlation:", round(cor_error, 3)), # Insert correlation here
     x = -800000, y = -1000000, 
     hjust = 0, vjust = 2, 
-    size = 6) +
+    size = 4) +
      theme_minimal() +
-  theme(plot.title = element_text(hjust = 0, size = 16))
+  theme(plot.title = element_text(size = 18, face = "bold"))
 ```
 
 ```{r}
@@ -662,8 +910,7 @@ race_table <- st_join(philly.test, tracts22) %>%
   group_by(raceContext) %>%
   summarise(mean.MAPE = scales::percent(mean(sale_price.APE, na.rm = T))) %>%
   st_drop_geometry() %>%
-  spread(raceContext, mean.MAPE) %>%
-  dplyr::select(-"<NA>")
+  spread(raceContext, mean.MAPE)
 income_table <- st_join(philly.test, tracts22) %>%
   group_by(incomeContext) %>%
   summarise(mean.MAPE = scales::percent(mean(sale_price.APE, na.rm = T))) %>%
@@ -683,12 +930,12 @@ bind_cols(race_table, income_table) %>%
 ```{r}
 # philly_finish <- philly %>%
 #   mutate(sale_price.Predict = predict(reg.training, philly))
-# ```
-# 
-# ```{r}
+```
+
+```{r}
 # ggplot() +
 #   geom_sf(data = nhoods, fill = "grey40", na.rm = T) +
-#   geom_sf(data = philly_finish, aes(colour = q5(sale_price.Predict), na.rm = T), 
+#   geom_sf(data = philly_finish, aes(colour = q5(sale_price.Predict), na.rm = T),
 #           show.legend = "point", size = .75) +
 #   scale_colour_manual(values = palette5,
 #                    labels=qBr(philly_finish,"sale_price.Predict"),
