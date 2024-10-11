@@ -10,6 +10,7 @@ output:
     toc_float: true
     toc_depth: 2
     code_folding: hide
+    number_sections: true
 bibliography: references.bib
 ---
 
@@ -628,7 +629,7 @@ e)  software
 
 # Results
 
-
+Using the features selected above, our model explains 76% of the variation in price and produces average errors of 36% relative to housing prices. In terms of cross-validation, our model was well-trained on the available variables and shows high accuracy for low-priced houses. However, it demonstrates less consistency and a slight positive spatial autocorrelation, suggesting the influence of unaccounted factors. At the urban scale, our model is less effective at predicting prices in low-income neighborhoods and reveals a significant discrepancy between high- and low-income areas, indicating a further development in generalizability.
 
 ## Our Regression Model: explaining 76% of the prices
 
@@ -659,16 +660,15 @@ reg.training <- lm(sale_price ~ log(total_livable_area+1) + total_livable_area +
     data = st_drop_geometry(philly.training))
 ```
 ```{r}
-kable(tidy(reg.training), digits = 3,caption = "OLS Regression Results", align = "ccccc") %>%
+kable(summary(reg.training)$coefficients, digits = 3,format = "html",caption = "OLS Regression Results", align = "ccccc") %>%
   kableExtra::kable_material(lightable_options = c("striped", "hover")) %>%
   scroll_box(height = "300px")
 ```
 
 
+In our model, the features explain approximately 76% of the variation in price (Adjusted R^2^ = `r scales::percent(summary(reg.training)$adj.r.squared, accuracy = 0.01)`) and most of their coefficients are statistically significant (p<0.1). Several features, such as general construction and architectural styles, are converted to categorical variables, allowing their coefficients to be estimated and linked to housing prices. The remaining insignificant coefficients are of neighborhood names or zoning numbers, which are less likely to regroup due to spatial disparities.
 
-In our model, the features explain approximately 76% of the variation in price (Adjusted R^2^ = `r scales::percent(summary(reg.training)$adj.r.squared, accuracy = 0.01)`) and most of their coefficients are statistically significant (*p<0.1). Several features, such as neighborhood names and architectural styles, are converted to categorical variables, allowing their coefficients to be estimated and linked to housing prices.
-
-## Accuracy: better for lower-priced sales
+## Accuracy: better for sales priced below $1,000,000
 
 To dictate how useful the model is for decision making, we used testing set to analyse goodness of fit indicators.
 
@@ -691,7 +691,7 @@ acc %>%
   kableExtra::kable_material(lightable_options = c("striped", "hover"))
 ```
 
-The Mean Absolute Error (MAE) is `r round(MAE,2)`, representing the average difference between predicted and observed prices. The relatively high value reflects the diversity in housing prices, suggesting a limitation for linear regression. The Mean Absolute Percent Error (MAPE) indicates that the prediction error amounts to `r scales::percent(MAPE, accuracy = 0.01)`of the housing prices on average.
+The Mean Absolute Error (MAE) is `r round(MAE,2)`, representing the average difference between predicted and observed prices. The relatively high value reflects the diversity in housing prices, suggesting a limitation for linear regression. The Mean Absolute Percent Error (MAPE) indicates that the prediction error amounts to `r scales::percent(MAPE, accuracy = 0.01)` of the housing prices on average.
 
 ```{r}
 ggplot(
@@ -748,10 +748,7 @@ stat_MAE %>%
   kableExtra::kable_material(lightable_options = c("striped", "hover"))
 ```
 
-The standard deviation of MAE (`r round(SD,2)`) indicates significant variation across the 100 folds. Additionally, the mean of MAE in cross-validation (`r round(Mean,2)`) is much higher than that in our test set (`r round(MAE,2)`), suggesting the model has less generalizability than previously assumed.
-
-(If the model generalized well, the distribution of errors would cluster tightly together.)
-
+The standard deviation of MAE (`r round(SD,2)`) reflects significant variation across the 100 folds. Additionally, the mean of MAE in cross-validation (`r round(Mean,2)`) is quite similar to the MAE in our test set (`r round(MAE,2)`), indicating that the model was well-trained on the existing variables and therefore shows an average error.
 
 ```{r}
 ggplot(data = data.frame(mae = reg.cv$resample[,3]),aes(x = mae)) +
@@ -772,15 +769,13 @@ ggplot(data = data.frame(mae = reg.cv$resample[,3]),aes(x = mae)) +
     x = 67000, y = 10, 
     hjust = 0, size = 4, color = "#E46726") +
   annotate(geom = "text", label = paste("MAE in the test set:\n", round(MAE, 2)), # Insert correlation here
-    x = 60000, y = 8, 
+    x = 61000, y = 9, 
     hjust = 1, size = 4, color = "#E46726", alpha = .8) 
 ```
 
-Visualized in a histogram, the distribution of MAE in cross-validation peaks around the MAE from the test set but exhibits long right tails. This suggests that the model predicts inconsistently and may be unreliable for predicting houses that have not been sold recently.
+Visualized in a histogram, the distribution of MAE in cross-validation peaks around 63000 and exhibits a long right tail. This suggests that the model predicts inconsistently and may be unreliable for predicting houses that have not been sold recently.
 
-## Generalizability: spatial autocorrelation exists
-
-What's the possible reason behind the high MAE? Since housing prices emerge a systematic spatial pattern mentioned at the beginning, a spatial autocorrelation test is considered. Calculating the average weighted model error of its five nearest neighbors as the "spatial lag", we delved deeper into the relevant spacial process in home prices.
+## Generalizability: positive spatial autocorrelation exists
 
 ```{r}
 philly.test_predict <-
@@ -805,22 +800,22 @@ ggplot() +
                    labels=qBr(philly.test_predict,"sale_price.Error"),
                    name="Quintile Breaks") +
   guides(color = guide_legend(override.aes = list(size = 3))) +
-  labs(title="Sale price errors on the test set",
-       subtitle = "Philadelphia, 2022") +
+  labs(title="Sale price errors on the test set") +
   mapTheme() +
   theme(plot.title = element_text(size = 18, face = "bold"),
         plot.subtitle = element_text(size = 12),
         panel.border = element_rect(colour = "black", fill=NA, size=1))
 ```
 
-As the map illustrates, sale price errors in Philadelphia clusters both within and across neighborhoods. Although our model accounts for neighborhood names and some tract characteristics, other factors influencing the spatial pattern of home prices remain to be explored.
+
+What might be causing the high MAE? Although our model incorporates internal characteristics, public services/amenities, and some spatial features, other factors influencing the spatial distribution of home prices remain unexplored. As the map illustrates, sale price errors in Philadelphia are generally randomly distributed, but with some clustering both within and across neighborhoods. How much do our model errors cluster? Calculating the average weighted model error of its five nearest neighbors as the "spatial lag", we delved deeper into the spatial autocorrelation test.
 
 ```{r}
 cor_error <- cor(philly.test_predict$lagPriceError, philly.test_predict$sale_price.Error, method = "pearson")
 ggplot(philly.test_predict, aes(x = lagPriceError, y = sale_price.Error))+
      geom_point(size = .5, color = "#6D9EC1") + geom_smooth(method = "lm", se=F, colour = "#E46726") +
      labs(title = "Error as a function of the spatial lag of price",
-          x = "Spatial lag of errors (Mean error of 5 nearest neighbors)", y = "Sale Price") +
+          x = "Spatial lag of errors (Mean error of 5 nearest neighbors)", y = "Sale price errors") +
   annotate(geom = "text", label = paste("Pearson Correlation:", round(cor_error, 3)), # Insert correlation here
     x = -700000, y = -1000000, 
     hjust = 0, vjust = 2, 
@@ -829,7 +824,7 @@ ggplot(philly.test_predict, aes(x = lagPriceError, y = sale_price.Error))+
   theme(plot.title = element_text(size = 18, face = "bold"))
 ```
 
-The relationship visualized above shows that as home price errors increase, nearby home price errors tend to rise as well. The correlation is `r round(cor_error,3)`, which is marginal but significant.
+Comparing the spatial lag with the actual values helps estimate the degree of spatial autocorrelation. The relationship visualized above shows that as home price errors increase, nearby home price errors tend to rise as well. The correlation is `r round(cor_error,3)`, which is marginal but significant.
 
 ```{r}
 philly.test_nonzero <- philly.test %>%
@@ -854,23 +849,24 @@ ggplot(as.data.frame(moranTest$res[c(1:999)]), aes(moranTest$res[c(1:999)])) +
 
 Another approach to measure spatial autocorrelation is Moran's I, where a positive value close to one indicates strong positive spatial autocorrelation. The histogram above shows 999 randomly permuted I values, with the observed I marked by the orange line. The observed I, higher than all random permutations, confirms spatial autocorrelation. An I of `r round(moranTest$statistic,3)` seems marginal, but a p-value of `r moranTest$p.value` still indicates statistically significant clustering.
 
-Therefore, both the spatial lag and Moran’s I test show that our model errors exhibit spatial autocorrelation, suggesting the presence of unaccounted factors.
+Both the spatial lag and Moran’s I test show that our model errors exhibit a slight positive spatial autocorrelation, suggesting the presence of unaccounted factors.
 
 
-## Generalizability - test across urban contexts
+## Generalizability: less effective for low-priced neighborhoods and low-income tracts
 
-+ Using the test set predictions, provide a map of mean absolute percentage error (MAPE) by neighborhood.
+How does the spatial autocorrelation manifest in our model? From the perspective of geospatial features, including neighborhoods and median income, we further analysed the spatial process of sale price predictions and tested the generalizability across urban contexts.
 
 ```{r}
-nhoods <- st_drop_geometry(philly.test) %>%
+nhoods_model <- st_drop_geometry(philly.test) %>%
   group_by(NAME) %>%
   summarise(mean.MAPE = mean(sale_price.APE, na.rm = T)) %>%
   ungroup() %>%
   left_join(nhoods) %>%
   st_sf()
 
-ggplot(nhoods) +
-  geom_sf(aes(fill = mean.MAPE), color = "grey") +
+ggplot() +
+  geom_sf(data = nhoods, fill = "transparent", color = "grey") +
+  geom_sf(data = nhoods_model, aes(fill = mean.MAPE), color = "grey") +
   scale_fill_gradient(low = "#6D9EC1", high = "#E46726", name = "MAPE") +
   labs(title = "Mean test set MAPE by neighborhood") +
   mapTheme() +
@@ -879,24 +875,33 @@ ggplot(nhoods) +
         panel.border = element_rect(colour = "black", fill=NA, size=1))
 ```
 
-+ Provide a scatterplot plot of MAPE by neighborhood as a function of mean price by neighborhood.
+The MAPE by neighborhood reveals significantly less accurate predictions in North and West Philadelphia (highlighted in red). The vacant areas have no housing sales data, including northern Center City, University City, Northeast Philadelphia Airport and its surroundings, southern South Philadelphia, and parks. In [North Philadelphia](https://en.wikipedia.org/wiki/North_Philadelphia#Neighborhoods), the red areas are predominantly home to Hispanic and Black residents, while the surrounding population is more diverse, contributing to the high MAPE. In [West Philadelphia](https://en.wikipedia.org/wiki/West_Philadelphia#History), the impact of the University of Pennsylvania’s role in gentrification in the east and rising crime in the west have led to deteriorating areas with high MAPE. Both red areas also have lower sale prices, confirming the spatial pattern of model generalizability.
+
 
 ```{r}
-nhoods <- left_join(nhoods,
+nhoods_model <- left_join(nhoods_model,
   st_drop_geometry(philly.test) %>%
     group_by(NAME) %>%
     summarise(meanPrice = mean(sale_price, na.rm = T))
 ) 
-ggplot(data = st_drop_geometry(nhoods)) +
+ggplot(data = st_drop_geometry(nhoods_model)) +
   geom_point(aes(x = meanPrice, y = mean.MAPE), size = 2, color = "#E46726", alpha = 0.7) +
+  geom_vline(aes(xintercept= 375000),
+               color="#6D9EC1", linetype="dashed", size=.8, alpha = .8) +
+  geom_hline(aes(yintercept= .4),
+               color="#6D9EC1", linetype="dashed", size=.8, alpha = .8) +
   labs(title = "MAPE as a function of mean price by neighborhood",
        x = "Mean Price by Neighborhood",
        y = "MAPE by Neighborhood") +
   theme_minimal() +
-  theme(plot.title = element_text(size = 18, face = "bold"))
+  theme(plot.title = element_text(size = 18, face = "bold")) +
+  annotate(geom = "text", label = paste("(275000,0.4)"),
+    x = 275000, y = 0.4, 
+    hjust = -.8, vjust = -1, size = 4, color = "#6D9EC1", alpha = .8)
 ```
 
-+ Using tidycensus, split your study area into two groups (perhaps by race or income) and test your model’s generalizability. Is your model generalizable?
+Upon further examining the relationship between price and MAPE across neighborhoods, it is evident that MAPE decreases as the mean price increases up to $375,000, but starts to rise when the mean price exceeds this threshold. In our model, mean prices between $125,000 and $500,000 are associated with relatively lower MAPE. The spatial pattern of MAPE (figure ) also shows that lower-priced, declining areas tend to have higher MAPE. These two graphs highlight that our model is more effective in neighborhoods with mid-range prices and that the socioeconomic context of neighborhoods impacts pricing.
+
 
 ```{r}
 census_api_key("e62580f74ef222beadd9dd2fbaf48ff130b31c4a", overwrite = TRUE)
@@ -920,14 +925,15 @@ tracts22 <- get_acs(geography = "tract",
   mutate(year = "2022",
          percentWhite = TotalWhites / TotalPop,
          raceContext = ifelse(percentWhite > .5, "Majority White", "Majority Non-White"),
-         incomeContext = ifelse(MedInc > 32322, "High Income", "Low Income"))
+         incomeContext = ifelse(MedInc > mean(MedInc, na.rm = T), "High Income", "Low Income"))
 ```
 
 ```{r}
 ggplot() + 
+  geom_sf(data = tracts22, fill = "transparent", color = "grey") +
   geom_sf(data = na.omit(tracts22), aes(fill = incomeContext), color = "grey90") +
   scale_fill_manual(values = c("#E46726", "#6D9EC1"), name="Income Context") +
-  labs(title = "Neighborhoods grouped by income",
+  labs(title = "Tracts grouped by income",
        subtitle = "Philadelphia, 2022") +
   mapTheme() + 
   theme(plot.title = element_text(size = 18, face = "bold"),
@@ -942,17 +948,18 @@ income_table <- st_join(philly.test, tracts22) %>%
   st_drop_geometry() %>%
   spread(incomeContext, mean.MAPE) %>%
   dplyr::select(-"<NA>") %>%
-  mutate(MAPE = scales::percent(MAPE))
+  mutate('No Context' = scales::percent(MAPE))
 
 income_table %>%
-  knitr::kable(caption = "Test set MAPE by neighborhood income context", align = "ccc") %>%
+  knitr::kable(caption = "Test set MAPE by tract income context", align = "ccc") %>%
   kableExtra::kable_material(lightable_options = c("striped", "hover"))
 ```
 
+At the urban scale, we compared MAPE across different income contexts to assess the generalizability of our model. Tracts with median incomes above the citywide mean were designated as 'High Income', effectively dividing Philadelphia into two categories. The nearly 1:2 ratio in MAPE highlights a significant difference in the model’s goodness of fit, indicating higher accuracy in predicting housing prices in high-income areas. The neighborhoods with high MAPE (see Figure) fall predominantly within the low-income group, suggesting a connection between race, crime, income, and housing prices.
 
 ## Challenge time
 
-+ Provide a map of your predicted values for where ‘toPredict’ is both “MODELLING” and “CHALLENGE”.
+Using our model, the predicted values for where ‘toPredict’ is both “MODELLING” and “CHALLENGE” are as follows.
 
 ```{r}
 philly_finish <- philly %>%
@@ -978,11 +985,15 @@ ggplot() +
 
 # Discussion
 
-Is this an effective model? What were some of the more interesting variables?  How much of the variation in prices could you predict? Describe the more important features? Describe the error in your predictions?  According to your maps, could you account the spatial variation in prices?  Where did the model predict particularly well? Poorly? Why do you think this might be?
+(Is this an effective model? **What were some of the more interesting variables?**  How much of the variation in prices could you predict? Describe the more important features? Describe the error in your predictions?  According to your maps, could you account the spatial variation in prices?  Where did the model predict particularly well? Poorly? Why do you think this might be?)
+
+Our model effectively predicts 76% of the variation in housing prices, particularly with high accuracy for sales priced below $1,000,000. Key features such as distance to the city center, neighborhood names, and zoning numbers significantly reduce prediction errors by approximately 20% when included in training. The Mean Absolute Error is `r round(MAE,2)` and the Mean Absolute Percent Error is `r scales::percent(MAPE, accuracy = 0.01)`. Prediction errors remain high due to the dataset's wide price variation and unaccounted factors influencing spatial dynamics. From the perspective of urban context, the model performs poorly in North Philadelphia, where clustering of Hispanic and Black residents presents challenges, and in West Philadelphia, where rising crime and gentrification add complexity. These decaying factors contribute to lower housing prices and a more intricate spatial process. Nonetheless, the model performs well in neighborhoods with mid-range housing prices, where the larger dataset provides stronger training and testing opportunities.
 
 # Conclusion
 
-Would you recommend your model to Zillow? Why or why not? How might you improve this model?
+(Would you recommend your model to Zillow? Why or why not? How might you improve this model?)
+
+I would recommend our model to Zillow for customers looking to predict mid-range housing prices in Philadelphia. The model is well-trained and accounts for internal characteristics, public services/amenities, and spatial features, demonstrating a strong fit within the context of Philadelphia. While there is some spatial autocorrelation present and OLS regression has its limitations, we plan to explore additional socioeconomic factors that influence the spatial process of housing prices and apply multivariate regression techniques to further enhance the model.
 
 # References
 
