@@ -126,7 +126,7 @@ studentData <-
 # census <- 
 #   read.csv("data/census.csv")
 
-descriptions <- read.csv("C:/Data/Fall 2024/CPLN 5920/Code/PPA/Predicting Housing Prices/data/data dictonary-studentdata.csv")
+descriptions <- read.csv("C:/Data/Fall 2024/CPLN 5920/Code/PPA/Predicting Housing Prices/data/descriptions.csv")
 set <- read.csv("C:/Data/Fall 2024/CPLN 5920/Code/PPA/Predicting Housing Prices/data/set.csv")
 
 philly <- studentData[,c(74,75,48,11,16,17,18,20,22,26,34,35,44,49,58,60,69,72,76)]
@@ -268,16 +268,31 @@ Sale price of homes is the dependent variable to be predicted, and Figure 2.1 sh
 stat_philly <- philly %>%
   dplyr::select(-musaID, -sale_price)
 
-descriptions_selected <- descriptions %>%
-  filter(!Field.Name %in% c("sale_price")) %>%
-  dplyr::select(Alias, Description)
-print(descriptions_selected)
 
-stargazer(st_drop_geometry(stat_philly), 
-          type = 'text', 
-          title = "Summary Statistics",
-          summary.stat = c("mean", "sd", "min", "max", "n"))
+stat_philly_data <- st_drop_geometry(stat_philly)
+
+descriptions$N <- sapply(descriptions$Field.Name, function(field) {
+  sum(!is.na(stat_philly_data[[field]]))
+})
+
+selected_vars <- descriptions$Field.Name[descriptions$Variable.Type %in% c("Categorical*", "Continuous")]
+
+descriptions <- descriptions %>% 
+  rowwise() %>%
+  mutate(
+    Mean = ifelse(Field.Name %in% selected_vars, round(mean(stat_philly_data[[Field.Name]], na.rm = TRUE), 3), NA),
+    StDev = ifelse(Field.Name %in% selected_vars, round(sd(stat_philly_data[[Field.Name]], na.rm = TRUE), 3), NA),
+    Min = ifelse(Field.Name %in% selected_vars, round(min(stat_philly_data[[Field.Name]], na.rm = TRUE), 3), NA),
+    Max = ifelse(Field.Name %in% selected_vars, round(max(stat_philly_data[[Field.Name]], na.rm = TRUE), 3), NA)
+  ) %>%
+  ungroup()
+
+descriptions %>%
+  knitr::kable(caption = "Summary Statistics", align = "cccl") %>%
+  kableExtra::kable_material(lightable_options = c("striped", "hover"))
 ```
+
+\*Note: Transformed from continuous into categorical in the regression model.
 
 The Hedonic Pricing Model divides the total cost of property into separate costs for each characteristic according to different subgroups. In this study, twenty-two variables are selected for the model, as summarized in Table 2.1. These include internal features like total livable area or exterior condition, amenities like crime and distance to nearest water body, as well as spatial contexts like mean family income in the census tract. The dataset’s average home has 1,333 square feet of livable space, 2.58 bedrooms and 1.07 bathrooms, with its cost at about $270,000.
 
