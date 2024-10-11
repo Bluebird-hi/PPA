@@ -85,11 +85,11 @@ Data Sources: [Philly neighborhoods](https://opendataphilly.org/datasets/philade
 
 ```{r data, echo = FALSE,quiet = TRUE, results = 'hide'}
 nhoods <- 
-  st_read("data/philadelphia-neighborhoods.geojson") %>%
+  st_read("C:/Data/Fall 2024/CPLN 5920/Code/PPA/Predicting Housing Prices/data/philadelphia-neighborhoods.geojson") %>%
   st_transform('EPSG:2272')
 
 studentData <- 
-  st_read("data/studentData.geojson") %>%
+  st_read("C:/Data/Fall 2024/CPLN 5920/Code/PPA/Predicting Housing Prices/data/studentData.geojson") %>%
   st_transform('EPSG:2272')
 
 # school <- 
@@ -127,11 +127,9 @@ studentData <-
 # census <- 
 #   read.csv("data/census.csv")
 
-descriptions <- read.csv("data/descriptions.csv")
+descriptions <- read.csv("C:/Data/Fall 2024/CPLN 5920/Code/PPA/Predicting Housing Prices/data/descriptions.csv")
 
 philly <- studentData[,c(74,75,48,11,16,17,18,20,22,26,34,35,44,49,58,60,69,72,76)]
-descriptions <- descriptions %>%
-  filter(Field.Name %in% colnames(philly))
 
 philly <- philly %>%
   # mutate(PricePerSq = philly$sale_price / philly$total_livable_area) %>%
@@ -172,7 +170,7 @@ philly <- philly %>%
 # st_write(phillyCrimes, dsn = 'data/phillyCrimes.geojson')
 
 phillyCrimes <- 
-  st_read("data/phillyCrimes.geojson")
+  st_read("C:/Data/Fall 2024/CPLN 5920/Code/PPA/Predicting Housing Prices/data/phillyCrimes.geojson")
 ```
 ```{r crimes_process}
 # philly$crimes.Buffer <- philly %>% 
@@ -224,7 +222,7 @@ philly <-
 #   left_join(census, by = "NAMELSAD") %>% 
 #   st_join(retail[, c("LPSS_PER1000", "HPSS_PER1000")])
 
-set <- read.csv("data/set.csv")
+set <- read.csv("C:/Data/Fall 2024/CPLN 5920/Code/PPA/Predicting Housing Prices/data/set.csv")
 philly_set <- merge(philly, set, by = "musaID", all.x = FALSE, all.y = FALSE, sort = FALSE) %>%
   dplyr::select(-toPredict.y) %>%
   rename(toPredict = toPredict.x) %>%
@@ -282,7 +280,7 @@ descriptions <- descriptions %>%
   ungroup()
 
 descriptions %>%
-  knitr::kable(caption = "<b>Table2.1 Summary Statistics</b>", align = "cccl") %>%
+  knitr::kable(caption = "<b>Table2.1 Summary Statistics</b>", align = "ccclccccc") %>%
   kableExtra::kable_material(lightable_options = c("striped", "hover")) %>%
   scroll_box(height = "300px", width = "800px")
 ```
@@ -552,7 +550,7 @@ combined_plot
 
 ```
 
-Cutting continuous variables into pieces is a way of dealing with non-linear relationships, as is shown in Figure 3.3. The sale price sharply decreases and slightly goes up as distance to city hall increases, reflecting the concentric development structure discussed in Figure 2.5. In this case, we added a “dist1” variable, assigning actual values if its distance is less than 20000 ft, or 20000 ft otherwise. This transformation will help achieve the effect of piecewise function in linear regressions. 
+Cutting continuous variables into pieces is a way of dealing with non-linear relationships, as is shown in Figure 2.5. The sale price sharply decreases and slightly goes up as distance to city hall increases, reflecting the concentric development structure discussed in Figure 2.5. In this case, we added a “dist1” variable, assigning actual values if its distance is less than 20000 ft, or 20000 ft otherwise. This transformation will help achieve the effect of piecewise function in linear regressions. 
 
 ```{r}
 philly_fac <- philly %>%
