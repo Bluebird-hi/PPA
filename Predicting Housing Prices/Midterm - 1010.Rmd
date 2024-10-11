@@ -68,19 +68,19 @@ palette5 <- colorRampPalette(c("#6D9EC1", "#E46726"))(5)
 
 # Introduction
 
-+ What is the purpose of this project?
-+ Why should we care about it?
-+ What makes this a difficult exercise?
-+ What is your overall modeling strategy?
-+ Briefly summarize your results.
+An improved prediction model for home prices helps stakeholders and government agencies in making better housing policy and marketing decisions. For Zillow, one of the leading real estate companies in United States, developing an accurate, generalizable model for home prices is crucial to providing effective services to customers and enhancing the company’s competitiveness in the industry. However, this is a challenging task as numerous factors affect home prices, and no single model could cover all of them. This study seeks to create a more comprehensive home price model for Philadelphia, aiming to increase both accuracy and generalizability to benefit homebuyers, investors, the company and policymakers.
+
+To achieve this, we applied the Hedonic Pricing Model, which accounts for internal characteristics, amenities/public services and spatial structure to determine property prices. Ordinary Least Square (OLS) regression forms the core of the model, following data cleaning, filtering and reclassification. Tests are conducted to evaluate the accuracy and generalizability of the model. Overall, our model takes a step forward by including local characteristics like citywide spatial structures and neighborhood contexts, and controls mean absolute percentage error (MAPE) to about 36% without introducing more complex algorithms. However, errors are unevenly distributed across different space and groups, indicating the need for further improvement.
 
 # Data
 
-## Data Wrangling
+Before modeling, we processed the data through data gathering from open portals, exploratory data analysis, and feature engineering.
 
-+ Briefly describe your methods for gathering the data.
+## Data Collection
 
-Data Sources: [Philly neighborhoods (nhoods)](https://opendataphilly.org/datasets/philadelphia-neighborhoods/), [housing sale prices (studentData)](https://github.com/mafichman/musa_5080_2024/blob/main/Midterm/data/2023/studentData.geojson), [crime incidents (phillyCrimes)](https://metadata.phila.gov/#home/datasetdetails/5543868920583086178c4f8e/representationdetails/570e7621c03327dc14f4b68d/)
+We reviewed previous studies to identify possible explanatory variables. Following the Hedonic Pricing Model, we sourced internal characteristics from the original dataset, gathered data on amenities (access to various spaces and services) through Open Data Philly portal, and accessed census data to grasp local contexts. Both continuous and categorial data are incorporated, and we chose the average distance to the 5 nearest crimes as an indicator of crime rate after comparing various metrics.
+
+Data Sources: [Philly neighborhoods (nhoods)](https://opendataphilly.org/datasets/philadelphia-neighborhoods/), [housing sale prices (studentData)](https://github.com/mafichman/musa_5080_2024/blob/main/Midterm/data/2023/studentData.geojson), [crime incidents (phillyCrimes)](https://metadata.phila.gov/#home/datasetdetails/5543868920583086178c4f8e/representationdetails/570e7621c03327dc14f4b68d/), [hydrology (water body)](https://metadata.phila.gov/#home/datasetdetails/557f30c6dcec614c29ce8b6d/representationdetails/557f30e3c579ea311699bb49/), [food retail access](https://metadata.phila.gov/#home/datasetdetails/568d4b3c13d1bebc0c2a2b0f/representationdetails/5d4c6e160f63a20011c21727/), [zoning](https://www.phila.gov/media/20220909084529/ZONING-QUICK-GUIDE_PCPC_9_9_22.pdf), [census tables](https://data.census.gov/table?g=050XX00US42101$1400000&y=2022&d=ACS%205-Year%20Estimates%20Data%20Profiles)
 
 ```{r data, echo = FALSE}
 nhoods <- 
@@ -151,12 +151,6 @@ philly <- philly %>%
 #  filter(Field.Name != "year_built")
 ```
 
-## Feature Engineering
-
-**Crimes: 2023-2019 (xlm)**
-
-the ‘average nearest neighbor distance’ from each home sale to its k nearest neighbor crimes
-
 ```{r crimes_data, include = FALSE}
 # phillyCrimes_2023 <- read.csv("data/Crimes/2023incidents_part1_part2.csv") %>%
 #   dplyr::select(text_general_code, dispatch_date, lat, lng)
@@ -208,8 +202,6 @@ philly <-
                               st_coordinates(phillyCrimes), k = 5)) 
 ```
 
-**Other data (sgz)**
-
 ```{r}
 # city_hall <- metro[metro$Station == 'City Hall', 6]
 # school_elem <- school %>%
@@ -247,15 +239,12 @@ philly_set <- merge(philly, set, by = "musaID", all.x = FALSE, all.y = FALSE, so
 philly <- philly_set %>% select(-distance_to_nearest_metro, -distance_to_nearest_hospital, -distance_to_nearest_school, -distance_to_nearest_park, -NAMELSAD, -Percent_Bachelor.s.degree.or.higher, -Percent_Management..business..science..and.arts.occupations, -Percent_Different.state, -Percent_With.private.health.insurance, -HPSS_PER1000)
 ```
 
-
-## Exploratory analysis
+## Exploratory Data Analysis
 
 ```{r}
 model_philly <- philly %>%
   filter(toPredict == "MODELLING")
 ```
-
-+ Develop 1 map of your dependent variable (sale price)
 
 ```{r price_map}
 ggplot() +
@@ -273,15 +262,7 @@ ggplot() +
         panel.border = element_rect(colour = "black", fill=NA, size=1))
 ```
 
-+ Present a table of summary statistics with variable descriptions. Sort these variables by their category (internal characteristics, amenities/public services or spatial structure).
-
-Internal characteristics: bed, bath, area, age, garage, floor...
-
-Amenities/public services: crime, distance to CBD/railway stations/schools/hospitals/grocery stores, green space...
-
-The spatial process of prices: education, income, white...
-
-(示例) references [@dubin1998predicting]
+Sale price of homes is the dependent variable to be predicted, and Figure 2.1 showed its spatial distribution across Philadelphia. Higher prices cluster in center city and the far northeast and northwest suburbs, while lower prices concentrate in west Philadelphia and north Philadelphia. This concentric pattern reflects how the city has developed, where the wealthier residents moved to the suburbs, leaving the middle ring less developed.
 
 ```{r}
 stat_philly <- philly %>%
@@ -298,10 +279,7 @@ stargazer(st_drop_geometry(stat_philly),
           summary.stat = c("mean", "sd", "min", "max", "n"))
 ```
 
-+ Present a correlation matrix
-
-this plot shows features that may be colinear, such as ...
-(These two features are ‘colinear’, or correlated with one another, so if both are input into the regression, one is insignificant. In such an instance, retain the feature that leads to a more accurate and generalizable model.)
+The Hedonic Pricing Model divides the total cost of property into separate costs for each characteristic according to different subgroups. In this study, twenty-two variables are selected for the model, as summarized in Table 2.1. These include internal features like total livable area or exterior condition, amenities like crime and distance to nearest water body, as well as spatial contexts like mean family income in the census tract. The dataset’s average home has 1,333 square feet of livable space, 2.58 bedrooms and 1.07 bathrooms, with its cost at about $270,000.
 
 ```{r}
 numericVars <- 
@@ -326,6 +304,8 @@ title(main = "Correlation across numeric variables", cex.main = 1.5, font.main =
 
 
 ```
+
+Correlation of sale price and other numeric variables are presented in Figure 2.2. Mean family income shows the strongest correlation with sale price (coefficient = 0.645), followed by total livable area. Exterior and interior conditions have the highest negative correlations. Some variables exhibit high autocorrelation, which may affect interpretability of the coefficients in the final model.
 
 ```{r}
 # ggplot(gather(numericVars), aes(value)) +
@@ -393,54 +373,9 @@ title(main = "Correlation across numeric variables", cex.main = 1.5, font.main =
 #      theme_minimal()
 ```
 
-(exploratory analysis goes beyond just correlation. Keep in mind that good exploratory analysis adds valuable context, particularly for non-technical audiences. )
+## Feature Engineering
 
-## Feature Selection
-
-(feature engineering like recoding Style into fewer categories, or converting NUM_FLOORS from numeric to categorical, could lead to a significant improvement in a predictive model.)
-
-+ Include any other maps/graphs/charts you think might be of interest.
-
-```{r}
-
-model_philly_numeric <- st_drop_geometry(model_philly) %>% 
-  dplyr::select(sale_price, distance_to_city_hall) %>%
-  filter(sale_price <= 1000000) %>%
-  mutate(DistanceCategory = ifelse(distance_to_city_hall <= 20000, "<= 20000", "> 20000"))
-
-plot1 <- ggplot(subset(model_philly_numeric, DistanceCategory == "<= 20000"),
-                aes(distance_to_city_hall, sale_price)) +
-  geom_point(size = 0.5, color = "#6D9EC1", alpha = 0.5) +
-  geom_smooth(method = "lm", se = FALSE, color = "#E46726") +
-  ylab("Sale Price") +
-  ggtitle("<= 20000") +  # 添加小标题
-  scale_x_continuous(breaks = seq(0, 20000, by = 10000)) +
-  theme_minimal() +
-  theme(axis.title.x = element_blank(),
-        plot.title = element_text(size = 12, hjust = 0.5)) 
-
-plot2 <- ggplot(subset(model_philly_numeric, DistanceCategory == "> 20000"),
-                aes(distance_to_city_hall, sale_price)) +
-  geom_point(size = 0.5, color = "#6D9EC1", alpha = 0.5) +
-  geom_smooth(method = "lm", se = FALSE, color = "#E46726") +
-  ggtitle("> 20000") +  # 添加小标题
-  theme_minimal() +
-  theme(axis.title.x = element_blank(),
-        axis.title.y = element_blank(),
-        axis.text.y = element_blank(),
-        axis.ticks.y = element_blank(),
-        plot.title = element_text(size = 12, hjust = 0.5)) 
-
-combined_plot <- plot1 + plot2 + 
-  plot_layout(widths = c(1, 4)) + 
-  plot_annotation(
-    title = "Price as a function of Distance to City Hall",
-    theme = theme(plot.title = element_text(size = 18, face = 'bold'))
-  )
-
-combined_plot
-
-```
+Transformations of variables can sometimes improve model performance. Three types of transformations are applied in this study: logarithmic transformation, reclassification, and piecewise splitting, with examples shown below.
 
 ```{r}
 model_philly_numeric <- st_drop_geometry(model_philly) %>% 
@@ -479,13 +414,15 @@ combined_plot <- plot1 + plot2 +
   plot_layout(widths = c(1, 1)) + 
   plot_annotation(
     title = "Distribution of Total Livable Area",
-    theme = theme(plot.title = element_text(size = 18, face = "bold", hjust = 0.5))
+    theme = theme(plot.title = element_text(size = 18, face = "bold"))
   )
 
 combined_plot
 
 
 ```
+
+Figure 3.1 shows a typical use of log-transformation to the variable total livable area, making a right-skewed distribution more normal, fitting the assumptions of the OLS framework better. 
 
 ```{r}
 philly_f <- philly %>% 
@@ -564,7 +501,50 @@ combined_plot
 
 ```
 
-+ Present 4 home price correlation scatterplots that you think are of interest. I’m going to look for interesting open data that you’ve integrated with the home sale observations.
+Reclassification includes converting a numeric variable into categorial one, and recoding it into fewer categories, as Figure 3.2. This applies to variables that have too few observations in some categories or have mere differences across categories, making the model more robust.
+
+```{r}
+
+model_philly_numeric <- st_drop_geometry(model_philly) %>% 
+  dplyr::select(sale_price, distance_to_city_hall) %>%
+  filter(sale_price <= 1000000) %>%
+  mutate(DistanceCategory = ifelse(distance_to_city_hall <= 20000, "<= 20000", "> 20000"))
+
+plot1 <- ggplot(subset(model_philly_numeric, DistanceCategory == "<= 20000"),
+                aes(distance_to_city_hall, sale_price)) +
+  geom_point(size = 0.5, color = "#6D9EC1", alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE, color = "#E46726") +
+  ylab("Sale Price") +
+  ggtitle("<= 20000") +  # 添加小标题
+  scale_x_continuous(breaks = seq(0, 20000, by = 10000)) +
+  theme_minimal() +
+  theme(axis.title.x = element_blank(),
+        plot.title = element_text(size = 12, hjust = 0.5)) 
+
+plot2 <- ggplot(subset(model_philly_numeric, DistanceCategory == "> 20000"),
+                aes(distance_to_city_hall, sale_price)) +
+  geom_point(size = 0.5, color = "#6D9EC1", alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE, color = "#E46726") +
+  ggtitle("> 20000") +  # 添加小标题
+  theme_minimal() +
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        plot.title = element_text(size = 12, hjust = 0.5)) 
+
+combined_plot <- plot1 + plot2 + 
+  plot_layout(widths = c(1, 4)) + 
+  plot_annotation(
+    title = "Price as a function of Distance to City Hall",
+    theme = theme(plot.title = element_text(size = 18, face = 'bold'))
+  )
+
+combined_plot
+
+```
+
+Cutting continuous variables into pieces is a way of dealing with non-linear relationships, as is shown in Figure 3.3. The sale price sharply decreases and slightly goes up as distance to city hall increases, reflecting the concentric development structure discussed in Figure 2.1. In this case, we added a “dist1” variable, assigning actual values if its distance is less than 20000 ft, or 20000 ft otherwise. This transformation will help achieve the effect of piecewise function in linear regressions. 
 
 ```{r}
 philly_fac <- philly %>%
@@ -716,7 +696,7 @@ st_drop_geometry(model_philly) %>%
   )
 ```
 
-+ Develop 3 maps of 3 of your most interesting independent variables.
+Figure 2.2 includes scatterplots for sale price against four selected continuous variables. Besides “distance to city hall” we have addressed, positive relationships between sale price and the other three variables are explicit. The points in the plots are dispersed rather than being around the line, showing the sense of Hedonic Pricing Model’s aim to value all services to define a total price, reducing the variance from any single variable.
 
 ```{r map1}
 ggplot() +
@@ -735,6 +715,8 @@ ggplot() +
         panel.border = element_rect(colour = "black", fill=NA, size=1))
 ```
 
+Low-produce supply stores (LPSS) include dollar stores, pharmacies and convenience stores. It is a measure of accessibility to affordable stores, having high density in areas with lower income in north and west Philadelphia, as shown in Figure 3.4. When aligned with other variables, LPSS distinguishes these neighborhoods well and enhances model accuracy.
+
 ```{r map2}
 ggplot() +
   geom_sf(data = nhoods, fill = "grey90",color = "white", na.rm = T) +
@@ -749,6 +731,8 @@ ggplot() +
         plot.subtitle = element_text(size = 12),
         panel.border = element_rect(colour = "black", fill=NA, size=1))
 ```
+
+The spatial distribution of exterior conditions is as Figure 3.5 (1 = best, 4 = worst). Homes with the best exterior conditions are close to the center city, and west Philadelphia shows a mix of both well- and ill-conditioned homes, instead of corresponding only with the wealthiness of the neighborhoods.
 
 ```{r map3}
 ggplot() +
@@ -773,6 +757,8 @@ ggplot() +
   )
 
 ```
+
+Figure 3.6 visualizes the zoning status, colored in the official colors. The most common type of zoning is RSA (Residential Single-Family Attached). RM (Residential Multi-Family), with higher density, are clustered along Board St, near center city and a couple of areas in west Philadelphia, while RSD (Residential Single-Family Detached), with lower density, are spread across far northwest and northeast suburbs.
 
 ```{r}
 # cor_philly <- 
@@ -803,18 +789,14 @@ ggplot() +
 #         plot.subtitle = element_text(size = 12)) 
 ```
 
-
-
-
 # Methods
 
-Briefly describe your method (remember who your audience is).
+The core of our algorithm is Ordinary Least Square (OLS) regression model. We used 9 continuous variables and 13 reclassified categorical variables as independent variables and sale price as the dependent variable. 
 
-a)  data cleaning
-b)	Exploratory Data Analysis
-c)  OLS Regression
-d)  additional analyses (k-fold cross-validation, Moran's I...)
-e)  software
+To build and evaluate our model, we split the dataset into two parts: 60% as the training set to fit the model, and 40% as the test set to evaluate its accuracy. The model was tested using Mean Absolute Error (MAE), Mean Absolute Percentage Error (MAPE) and prediction v.s. actual value scatter plot.
+To ensure the accuracy of the model, we applied a 100-fold cross validation process. This divides the data into 100 subsets, repeatedly testing the model to see how well it performs across different samples. Finally, we examined the generalizability of the model across different neighborhood contexts by observing the distribution of spatial lag, calculating Moran’s I (a measure of spatial clustering in model errors), and testing the model in different neighborhood settings.
+
+Analyses were conducted using R version 4.4.1.
 
 # Results
 
@@ -836,6 +818,7 @@ inTrain <- createDataPartition(
 philly.training <- model_philly[inTrain,] 
 philly.test <- model_philly[-inTrain,]
 ```
+
 ```{r}
 reg.training <- lm(sale_price ~ log(total_livable_area+1) + total_livable_area + crime_nn5 + LPSS_PER1000 +
               log(dist1+1) +log(distance_to_city_hall+1) + log(distance_to_nearest_water+1) +
