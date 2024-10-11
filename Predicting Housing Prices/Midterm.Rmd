@@ -82,11 +82,11 @@ Data Sources: [Philly neighborhoods (nhoods)](https://opendataphilly.org/dataset
 
 ```{r data, echo = FALSE}
 nhoods <- 
-  st_read("C:/Data/Fall 2024/CPLN 5920/Code/PPA/Predicting Housing Prices/data/philadelphia-neighborhoods.geojson") %>%
+  st_read("data/philadelphia-neighborhoods.geojson") %>%
   st_transform('EPSG:2272')
 
 studentData <- 
-  st_read("C:/Data/Fall 2024/CPLN 5920/Code/PPA/Predicting Housing Prices/data/studentData.geojson") %>%
+  st_read("data/studentData.geojson") %>%
   st_transform('EPSG:2272')
 
 # school <- 
@@ -124,8 +124,7 @@ studentData <-
 # census <- 
 #   read.csv("data/census.csv")
 
-descriptions <- read.csv("C:/Data/Fall 2024/CPLN 5920/Code/PPA/Predicting Housing Prices/data/data dictonary-studentdata.csv")
-set <- read.csv("C:/Data/Fall 2024/CPLN 5920/Code/PPA/Predicting Housing Prices/data/set.csv")
+descriptions <- read.csv("data/data dictonary-studentdata.csv")
 
 philly <- studentData[,c(74,75,48,11,16,17,18,20,22,26,34,35,44,49,58,60,69,72,76)]
 descriptions <- descriptions %>%
@@ -179,7 +178,7 @@ the ‘average nearest neighbor distance’ from each home sale to its k nearest
 # st_write(phillyCrimes, dsn = 'data/phillyCrimes.geojson')
 
 phillyCrimes <- 
-  st_read("C:/Data/Fall 2024/CPLN 5920/Code/PPA/Predicting Housing Prices/data/phillyCrimes.geojson")
+  st_read("data/phillyCrimes.geojson")
 ```
 
 ```{r crimes_process}
@@ -239,6 +238,7 @@ philly <-
 
 
 ```{r}
+set <- read.csv("data/set.csv")
 philly_set <- merge(philly, set, by = "musaID", all.x = FALSE, all.y = FALSE, sort = FALSE) %>%
   dplyr::select(-toPredict.y) %>%
   rename(toPredict = toPredict.x) %>%
@@ -515,12 +515,6 @@ ggplot() +
 ```{r}
 philly_fac <- philly %>%
   mutate(
-    basements = case_when(
-      basements %in% c("0", "1", "4", "A") ~ "B",   
-      TRUE ~ "A"                               
-    ),
-    basements = factor(basements),
-    
     central_air = case_when(
       central_air %in% c("1", "Y") ~ "Y",  
       TRUE ~ "N"                          
@@ -540,12 +534,6 @@ philly_fac <- philly %>%
       TRUE ~ "1"                                
     ),
     fireplaces = factor(fireplaces),
-    
-    fuel = case_when(
-      is.na(fuel) | fuel == "" ~ "X",  
-      TRUE ~ "A"                       
-    ),
-    fuel = factor(fuel),
     
     garage_spaces = case_when(
       is.na(garage_spaces) | garage_spaces == 0 ~ "0",    
@@ -587,13 +575,6 @@ philly_fac <- philly %>%
     ),
     number_of_bedrooms = factor(number_of_bedrooms),
     
-    parcel_shape = case_when(
-      parcel_shape %in% c("C", "E") ~ "A",  
-      parcel_shape == "A" ~ "B",            
-      TRUE ~ "C"                            
-    ),
-    parcel_shape = factor(parcel_shape),
-    
     quality_grade = case_when(
       quality_grade %in% c("A+", "A", "A-", "X", "X-") ~ "1",           
       quality_grade %in% c("B+", "B", "B-", "3", "S+") ~ "2",
@@ -607,23 +588,11 @@ philly_fac <- philly %>%
     ),
     separate_utilities = factor(separate_utilities),
     
-    street_direction = case_when(
-      is.na(street_direction) | street_direction == "" | street_direction == "S" ~ "A",
-      TRUE ~ "B"                           
-    ),
-    street_direction = factor(street_direction),
-    
     topography = case_when(
       topography == "B" ~ "B",
       TRUE ~ "A"
     ),
     topography = factor(topography),
-    
-    type_heater = case_when(
-      type_heater == "D" ~ "B",            
-      TRUE ~ "A"                           
-    ),
-    type_heater = factor(type_heater),
     
     building_code_description_new = case_when(
       building_code_description_new %in% c("COLONIAL", "OLD STYLE", "ROW MODERN", "ROW OLD STYLE", "TUDOR", "TWIN BUNGALOW") ~ "1",
@@ -641,6 +610,7 @@ philly_fac <- philly %>%
     NAME = factor(NAME)
   )
 
+philly <- philly_fac
 model_philly <- philly %>%
   filter(toPredict == "MODELLING")
 ```
@@ -660,11 +630,12 @@ e)  software
 
 
 
-## Our Regression Model: explaining 75% of the prices
+## Our Regression Model: explaining 76% of the prices
 
 To improve the model's accuracy and generalizability, we randomly split the dataset into 60% for training the model and 40% for testing its goodness of fit. Using the selected features, OLS regression was performed on the training set.
 
 ```{r}
+set.seed(34)
 inTrain <- createDataPartition(
               y = paste(model_philly$general_construction, 
                        model_philly$topography,
@@ -686,11 +657,16 @@ reg.training <- lm(sale_price ~ log(total_livable_area+1) + total_livable_area +
               separate_utilities + topography + building_code_description_new + zoning + 
               NAME,
     data = st_drop_geometry(philly.training))
-
-stargazer(reg.training, type = "text",title="Regression Results",align=TRUE,no.space=TRUE)
+```
+```{r}
+kable(tidy(reg.training), digits = 3,caption = "OLS Regression Results", align = "ccccc") %>%
+  kableExtra::kable_material(lightable_options = c("striped", "hover")) %>%
+  scroll_box(height = "300px")
 ```
 
-In our model, the features explain approximately 75% of the variation in price (Adjusted R^2^ = 0.753) and most of their coefficients are statistically significant (*p<0.1). Several features, such as neighborhood names and architectural styles, are converted to categorical variables, allowing their coefficients to be estimated and linked to housing prices.
+
+
+In our model, the features explain approximately 76% of the variation in price (Adjusted R^2^ = `r scales::percent(summary(reg.training)$adj.r.squared, accuracy = 0.01)`) and most of their coefficients are statistically significant (*p<0.1). Several features, such as neighborhood names and architectural styles, are converted to categorical variables, allowing their coefficients to be estimated and linked to housing prices.
 
 ## Accuracy: better for lower-priced sales
 
@@ -715,7 +691,7 @@ acc %>%
   kableExtra::kable_material(lightable_options = c("striped", "hover"))
 ```
 
-The Mean Absolute Error (MAE) is `r MAE`, representing the average difference between predicted and observed prices. The relatively high value reflects the diversity in housing prices, suggesting a limitation for linear regression. The Mean Absolute Percent Error (MAPE) indicates that the prediction error amounts to `r scales::percent(MAPE, accuracy = 0.01)`of the housing prices on average.
+The Mean Absolute Error (MAE) is `r round(MAE,2)`, representing the average difference between predicted and observed prices. The relatively high value reflects the diversity in housing prices, suggesting a limitation for linear regression. The Mean Absolute Percent Error (MAPE) indicates that the prediction error amounts to `r scales::percent(MAPE, accuracy = 0.01)`of the housing prices on average.
 
 ```{r}
 ggplot(
@@ -754,9 +730,13 @@ reg.cv <-
     
     data = st_drop_geometry(model_philly),
     method = "lm", trControl = fitControl, na.action = na.pass)
-
-reg.cv
 ```
+
+```{r}
+kable(reg.cv$results, digits = 3,caption = "Cross-Validation Results", align = "ccccccc") %>%
+  kableExtra::kable_material(lightable_options = c("striped", "hover"))
+```
+
 
 ```{r}
 Mean <- mean(reg.cv$resample[,3])
@@ -768,7 +748,7 @@ stat_MAE %>%
   kableExtra::kable_material(lightable_options = c("striped", "hover"))
 ```
 
-The standard deviation of MAE (`r round(SD,2)`) indicates significant variation across the 100 folds. Additionally, the mean of MAE in cross-validation (`r Mean`) is much higher than that in our test set (`r round(MAE,2)`), suggesting the model has less generalizability than previously assumed.
+The standard deviation of MAE (`r round(SD,2)`) indicates significant variation across the 100 folds. Additionally, the mean of MAE in cross-validation (`r round(Mean,2)`) is much higher than that in our test set (`r round(MAE,2)`), suggesting the model has less generalizability than previously assumed.
 
 (If the model generalized well, the distribution of errors would cluster tightly together.)
 
@@ -802,8 +782,6 @@ Visualized in a histogram, the distribution of MAE in cross-validation peaks aro
 
 What's the possible reason behind the high MAE? Since housing prices emerge a systematic spatial pattern mentioned at the beginning, a spatial autocorrelation test is considered. Calculating the average weighted model error of its five nearest neighbors as the "spatial lag", we delved deeper into the relevant spacial process in home prices.
 
-+ Provide a map of your residuals for your test set. Include a Moran’s I test and a plot of the spatial lag in errors.
-
 ```{r}
 philly.test_predict <-
   philly.test[which(philly.test$sale_price.Error != 0),]
@@ -814,7 +792,28 @@ neighborList.test <- knn2nb(knearneigh(coords.test, 5))
 
 spatialWeights.test <- nb2listw(neighborList.test, style="W")
 philly.test_predict$lagPriceError <- lag.listw(spatialWeights.test, philly.test_predict$sale_price.Error)
+
+philly.test <- philly.test_predict
 ```
+
+```{r}
+ggplot() +
+  geom_sf(data = nhoods, fill = "grey40", color = "grey", na.rm = T) +
+  geom_sf(data = philly.test_predict, aes(colour = q5(sale_price.Error), na.rm = T),
+          show.legend = "point", size = .75) +
+  scale_colour_manual(values = palette5,
+                   labels=qBr(philly.test_predict,"sale_price.Error"),
+                   name="Quintile Breaks") +
+  guides(color = guide_legend(override.aes = list(size = 3))) +
+  labs(title="Sale price errors on the test set",
+       subtitle = "Philadelphia, 2022") +
+  mapTheme() +
+  theme(plot.title = element_text(size = 18, face = "bold"),
+        plot.subtitle = element_text(size = 12),
+        panel.border = element_rect(colour = "black", fill=NA, size=1))
+```
+
+As the map illustrates, sale price errors in Philadelphia clusters both within and across neighborhoods. Although our model accounts for neighborhood names and some tract characteristics, other factors influencing the spatial pattern of home prices remain to be explored.
 
 ```{r}
 cor_error <- cor(philly.test_predict$lagPriceError, philly.test_predict$sale_price.Error, method = "pearson")
@@ -831,23 +830,6 @@ ggplot(philly.test_predict, aes(x = lagPriceError, y = sale_price.Error))+
 ```
 
 The relationship visualized above shows that as home price errors increase, nearby home price errors tend to rise as well. The correlation is `r round(cor_error,3)`, which is marginal but significant.
-
-```{r}
-ggplot() +
-  geom_sf(data = nhoods, fill = "grey90",color = "white") +
-  geom_sf(data = philly.test_predict, aes(colour = q5(lagPriceError)),
-          show.legend = "point", size = .75) +
-  scale_colour_manual(values = palette5,
-                   labels=qBr(philly.test_predict,"lagPriceError"),
-                   name="Quintile Breaks") +
-  guides(color = guide_legend(override.aes = list(size = 3))) + 
-  labs(title="A map of spatial lag in errors") +
-  mapTheme() +
-  theme(plot.title = element_text(size = 18, face = "bold"),
-        plot.subtitle = element_text(size = 12))
-```
-
-As the map illustrates, spatial lag in errors in Philadelphia clusters both within and across neighborhoods. Although our model accounts for neighborhood names and some tract characteristics, other factors influencing the spatial pattern of home prices remain to be explored.
 
 ```{r}
 philly.test_nonzero <- philly.test %>%
@@ -870,7 +852,7 @@ ggplot(as.data.frame(moranTest$res[c(1:999)]), aes(moranTest$res[c(1:999)])) +
   theme(plot.title = ggtext::element_markdown(size = 18, face = "bold"))
 ```
 
-Another approach to measure spatial autocorrelation is Moran's I, where a positive value close to one indicates strong positive spatial autocorrelation. The histogram above shows 999 randomly permuted I values, with the observed I marked by the orange line. The observed I, higher than all random permutations, confirms spatial autocorrelation. An I of `r round(moranTest$statistic,3)` and a p-value of `r moranTest$p.value` further indicate statistically significant clustering.
+Another approach to measure spatial autocorrelation is Moran's I, where a positive value close to one indicates strong positive spatial autocorrelation. The histogram above shows 999 randomly permuted I values, with the observed I marked by the orange line. The observed I, higher than all random permutations, confirms spatial autocorrelation. An I of `r round(moranTest$statistic,3)` seems marginal, but a p-value of `r moranTest$p.value` still indicates statistically significant clustering.
 
 Therefore, both the spatial lag and Moran’s I test show that our model errors exhibit spatial autocorrelation, suggesting the presence of unaccounted factors.
 
@@ -888,14 +870,14 @@ nhoods <- st_drop_geometry(philly.test) %>%
   st_sf()
 
 ggplot(nhoods) +
-  geom_sf(aes(fill = mean.MAPE), color = "grey90") +
+  geom_sf(aes(fill = mean.MAPE), color = "grey") +
   scale_fill_gradient(low = "#6D9EC1", high = "#E46726", name = "MAPE") +
   labs(title = "Mean test set MAPE by neighborhood") +
   mapTheme() +
   theme(plot.title = element_text(size = 18, face = "bold"),
-        plot.subtitle = element_text(size = 12))
+        plot.subtitle = element_text(size = 12),
+        panel.border = element_rect(colour = "black", fill=NA, size=1))
 ```
-
 
 + Provide a scatterplot plot of MAPE by neighborhood as a function of mean price by neighborhood.
 
@@ -942,32 +924,29 @@ tracts22 <- get_acs(geography = "tract",
 ```
 
 ```{r}
-grid.arrange(ncol = 2,
-  ggplot() + geom_sf(data = na.omit(tracts22), aes(fill = raceContext), color = "grey90") +
-    scale_fill_manual(values = c("#6D9EC1", "#E46726"), name="Race Context") +
-    labs(title = "Race Context") +
-    mapTheme() + theme(legend.position="bottom"), 
-  ggplot() + geom_sf(data = na.omit(tracts22), aes(fill = incomeContext), color = "grey90") +
-    scale_fill_manual(values = c("#6D9EC1", "#E46726"), name="Income Context") +
-    labs(title = "Income Context") +
-    mapTheme() + theme(legend.position="bottom"))
+ggplot() + 
+  geom_sf(data = na.omit(tracts22), aes(fill = incomeContext), color = "grey90") +
+  scale_fill_manual(values = c("#E46726", "#6D9EC1"), name="Income Context") +
+  labs(title = "Neighborhoods grouped by income",
+       subtitle = "Philadelphia, 2022") +
+  mapTheme() + 
+  theme(plot.title = element_text(size = 18, face = "bold"),
+        plot.subtitle = element_text(size = 12),
+        panel.border = element_rect(colour = "black", fill=NA, size=1))
 ```
 
 ```{r}
-race_table <- st_join(philly.test, tracts22) %>%
-  group_by(raceContext) %>%
-  summarise(mean.MAPE = scales::percent(mean(sale_price.APE, na.rm = T))) %>%
-  st_drop_geometry() %>%
-  spread(raceContext, mean.MAPE)
 income_table <- st_join(philly.test, tracts22) %>%
   group_by(incomeContext) %>%
   summarise(mean.MAPE = scales::percent(mean(sale_price.APE, na.rm = T))) %>%
   st_drop_geometry() %>%
   spread(incomeContext, mean.MAPE) %>%
-  dplyr::select(-"<NA>")
-bind_cols(race_table, income_table) %>%
-  mutate(MAPE = scales::percent(MAPE)) %>%
-  kable(caption = "Test set MAPE by neighborhood racial and income context") %>% kable_styling(full_width = F)
+  dplyr::select(-"<NA>") %>%
+  mutate(MAPE = scales::percent(MAPE))
+
+income_table %>%
+  knitr::kable(caption = "Test set MAPE by neighborhood income context", align = "ccc") %>%
+  kableExtra::kable_material(lightable_options = c("striped", "hover"))
 ```
 
 
@@ -976,22 +955,26 @@ bind_cols(race_table, income_table) %>%
 + Provide a map of your predicted values for where ‘toPredict’ is both “MODELLING” and “CHALLENGE”.
 
 ```{r}
-# philly_finish <- philly %>%
-#   mutate(sale_price.Predict = predict(reg.training, philly))
+philly_finish <- philly %>%
+   mutate(sale_price.Predict = predict(reg.training, philly))
 ```
 
 ```{r}
-# ggplot() +
-#   geom_sf(data = nhoods, fill = "grey40", na.rm = T) +
-#   geom_sf(data = philly_finish, aes(colour = q5(sale_price.Predict), na.rm = T),
-#           show.legend = "point", size = .75) +
-#   scale_colour_manual(values = palette5,
-#                    labels=qBr(philly_finish,"sale_price.Predict"),
-#                    name="Quintile\nBreaks") +
-#   labs(title="Predicted Values, Philadelphia") +
-#   theme_void()
+ggplot() +
+  geom_sf(data = nhoods, fill = "grey40", color = "grey", na.rm = T) +
+  geom_sf(data = philly_finish %>% filter(!is.na(sale_price.Predict)), aes(colour = q5(sale_price.Predict), na.rm = T),
+          show.legend = "point", size = .75) +
+  scale_colour_manual(values = palette5,
+                   labels=qBr(philly_finish,"sale_price.Predict"),
+                   name="Quintile Breaks") +
+  guides(color = guide_legend(override.aes = list(size = 3))) +
+  labs(title="Predicted Values of 'Modelling' and 'Challenge'",
+       subtitle = "Philadelphia, 2022") +
+  mapTheme() +
+  theme(plot.title = element_text(size = 18, face = "bold"),
+        plot.subtitle = element_text(size = 12),
+        panel.border = element_rect(colour = "black", fill=NA, size=1))
 ```
-
 
 # Discussion
 
