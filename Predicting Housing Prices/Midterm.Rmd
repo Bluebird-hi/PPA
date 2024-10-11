@@ -58,8 +58,7 @@ library(classInt)
 library(viridis)
 library(patchwork)
 library(corrplot)
-```
-```{r setup2, message = FALSE}
+
 
 source("https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/functions.r")
 
@@ -70,7 +69,9 @@ palette5 <- colorRampPalette(c("#6D9EC1", "#E46726"))(5)
 
 An improved prediction model for home prices helps stakeholders and government agencies in making better housing policy and marketing decisions. For Zillow, one of the leading real estate companies in United States, developing an accurate, generalizable model for home prices is crucial to providing effective services to customers and enhancing the company’s competitiveness in the industry. However, this is a challenging task as numerous factors affect home prices, and no single model could cover all of them. This study seeks to create a more comprehensive home price model for Philadelphia, aiming to increase both accuracy and generalizability to benefit homebuyers, investors, the company and policymakers.
 
-To achieve this, we applied the Hedonic Pricing Model, which accounts for internal characteristics, amenities/public services and spatial structure to determine property prices. Ordinary Least Square (OLS) regression forms the core of the model, following data cleaning, filtering and reclassification. Tests are conducted to evaluate the accuracy and generalizability of the model. Overall, our model takes a step forward by including local characteristics like citywide spatial structures and neighborhood contexts, and controls mean absolute percentage error (MAPE) to about 36% without introducing more complex algorithms. However, errors are unevenly distributed across different space and groups, indicating the need for further improvement.
+To achieve this, we applied the Hedonic Pricing Model, which accounts for internal characteristics, amenities/public services and spatial structure to determine property prices. Ordinary Least Square (OLS) regression forms the core of the model, following data cleaning, filtering and reclassification. Tests are conducted to evaluate the accuracy and generalizability of the model.
+
+Overall, our model takes a step forward by including local characteristics like citywide spatial structures and neighborhood contexts, effectively predicts 76% of the variation in housing prices, achieves high accuracy for sales priced below $1,000,000, and controls mean absolute percentage error (MAPE) to about 36% without introducing more complex algorithms. However, the model shows less consistency and slight spatial autocorrelation, suggesting unaccounted factors. At the urban scale, North and West Philadelphia demonstrate poor predictions, indicating less generalizability towards low-priced neighborhoods and low-income tracts. Our model could be applied for predicting mid-range housing prices. Additional socioeconomic factors and non-linear regression techniques could be explored to develop the model.
 
 # Data
 
@@ -78,7 +79,7 @@ Before modeling, we processed the data through data gathering from open portals,
 
 ## Data Collection
 
-We reviewed previous studies to identify possible explanatory variables. Following the Hedonic Pricing Model, we sourced internal characteristics from the original dataset, gathered data on amenities (access to various spaces and services) through Open Data Philly portal, and accessed census data to grasp local contexts. Both continuous and categorial data are incorporated, and we chose the average distance to the 5 nearest crimes as an indicator of crime rate after comparing various metrics.[@zaki2022house,@lin2019implementing,@li2021understanding,@aziz2023proximity]
+We reviewed previous studies to identify possible explanatory variables. Following the Hedonic Pricing Model, we sourced internal characteristics from the original dataset, gathered data on amenities (access to various spaces and services) through Open Data Philly portal, and accessed census data to grasp local contexts. Both continuous and categorial data are incorporated, and we chose the average distance to the 5 nearest crimes as an indicator of crime rate after comparing various metrics.[@zaki2022house;@lin2019implementing;@li2021understanding;@aziz2023proximity]
 
 Data Sources: [Philly neighborhoods](https://opendataphilly.org/datasets/philadelphia-neighborhoods/), [housing sale prices (studentData)](https://github.com/mafichman/musa_5080_2024/blob/main/Midterm/data/2023/studentData.geojson), [crime incidents](https://metadata.phila.gov/#home/datasetdetails/5543868920583086178c4f8e/representationdetails/570e7621c03327dc14f4b68d/), [hydrology](https://metadata.phila.gov/#home/datasetdetails/557f30c6dcec614c29ce8b6d/representationdetails/557f30e3c579ea311699bb49/), [food retail access](https://metadata.phila.gov/#home/datasetdetails/568d4b3c13d1bebc0c2a2b0f/representationdetails/5d4c6e160f63a20011c21727/), [zoning](https://www.phila.gov/media/20220909084529/ZONING-QUICK-GUIDE_PCPC_9_9_22.pdf), [census tables](https://data.census.gov/table?g=050XX00US42101$1400000&y=2022&d=ACS%205-Year%20Estimates%20Data%20Profiles)
 
@@ -131,8 +132,7 @@ descriptions <- read.csv("data/descriptions.csv")
 philly <- studentData[,c(74,75,48,11,16,17,18,20,22,26,34,35,44,49,58,60,69,72,76)]
 descriptions <- descriptions %>%
   filter(Field.Name %in% colnames(philly))
-```
-```{r data_process}
+
 philly <- philly %>%
   # mutate(PricePerSq = philly$sale_price / philly$total_livable_area) %>%
   #mutate(Age = 2024 - year_built) %>%
@@ -175,29 +175,28 @@ phillyCrimes <-
   st_read("data/phillyCrimes.geojson")
 ```
 ```{r crimes_process}
-philly$crimes.Buffer <- philly %>% 
-    st_buffer(660) %>% 
-    aggregate(mutate(phillyCrimes, counter = 1),., sum) %>%
-    pull(counter)
+# philly$crimes.Buffer <- philly %>% 
+#     st_buffer(660) %>% 
+#     aggregate(mutate(phillyCrimes, counter = 1),., sum) %>%
+#     pull(counter)
 philly <-
   philly %>% 
     mutate(
-      crime_nn1 = nn_function(st_coordinates(philly), 
-                              st_coordinates(phillyCrimes), k = 1),
-      
-      crime_nn2 = nn_function(st_coordinates(philly), 
-                              st_coordinates(phillyCrimes), k = 2), 
-      
-      crime_nn3 = nn_function(st_coordinates(philly), 
-                              st_coordinates(phillyCrimes), k = 3), 
-      
-      crime_nn4 = nn_function(st_coordinates(philly), 
-                              st_coordinates(phillyCrimes), k = 4), 
+      # crime_nn1 = nn_function(st_coordinates(philly), 
+      #                         st_coordinates(phillyCrimes), k = 1),
+      # 
+      # crime_nn2 = nn_function(st_coordinates(philly), 
+      #                         st_coordinates(phillyCrimes), k = 2), 
+      # 
+      # crime_nn3 = nn_function(st_coordinates(philly), 
+      #                         st_coordinates(phillyCrimes), k = 3), 
+      # 
+      # crime_nn4 = nn_function(st_coordinates(philly), 
+      #                         st_coordinates(phillyCrimes), k = 4), 
       
       crime_nn5 = nn_function(st_coordinates(philly), 
-                              st_coordinates(phillyCrimes), k = 5)) 
-```
-```{r}
+                              st_coordinates(phillyCrimes), k = 5))
+
 # city_hall <- metro[metro$Station == 'City Hall', 6]
 # school_elem <- school %>%
 #   filter(str_detect(GRADE_LEVEL, "ELEMENTARY"))
@@ -224,8 +223,7 @@ philly <-
 #   st_join(census_tract["NAMELSAD"]) %>%
 #   left_join(census, by = "NAMELSAD") %>% 
 #   st_join(retail[, c("LPSS_PER1000", "HPSS_PER1000")])
-```
-```{r}
+
 set <- read.csv("data/set.csv")
 philly_set <- merge(philly, set, by = "musaID", all.x = FALSE, all.y = FALSE, sort = FALSE) %>%
   dplyr::select(-toPredict.y) %>%
@@ -234,13 +232,13 @@ philly_set <- merge(philly, set, by = "musaID", all.x = FALSE, all.y = FALSE, so
 philly <- philly_set %>% select(-distance_to_nearest_metro, -distance_to_nearest_hospital, -distance_to_nearest_school, -distance_to_nearest_park, -NAMELSAD, -Percent_Bachelor.s.degree.or.higher, -Percent_Management..business..science..and.arts.occupations, -Percent_Different.state, -Percent_With.private.health.insurance, -HPSS_PER1000)
 ```
 
+
 ## Exploratory Data Analysis
 
 ```{r}
 model_philly <- philly %>%
   filter(toPredict == "MODELLING")
-```
-```{r price_map}
+
 ggplot() +
   geom_sf(data = nhoods, fill = "grey40", color = "grey") +
   geom_sf(data = model_philly, aes(colour = q5(sale_price)),
@@ -257,6 +255,7 @@ ggplot() +
         plot.subtitle = element_text(size = 12),
         panel.border = element_rect(colour = "black", fill=NA, size=1))
 ```
+
 
 Sale price of homes is the dependent variable to be predicted, and Figure 2.1 showed its spatial distribution across Philadelphia. Higher prices cluster in center city and the far northeast and northwest suburbs, while lower prices concentrate in west Philadelphia and north Philadelphia. This concentric pattern reflects how the city has developed, where the wealthier residents moved to the suburbs, leaving the middle ring less developed.
 
@@ -284,10 +283,13 @@ descriptions <- descriptions %>%
 
 descriptions %>%
   knitr::kable(caption = "<b>Table2.1 Summary Statistics</b>", align = "cccl") %>%
-  kableExtra::kable_material(lightable_options = c("striped", "hover"))
+  kableExtra::kable_material(lightable_options = c("striped", "hover")) %>%
+  scroll_box(height = "300px", width = "800px")
 ```
 
-The Hedonic Pricing Model divides the total cost of property into separate costs for each characteristic according to different subgroups.[@mayor2009hedonic,@scotchmer1985hedonic] In this study, twenty-two variables are selected for the model, as summarized in Table 2.1. These include internal features like total livable area or exterior condition, amenities like crime and distance to nearest water body, as well as spatial contexts like mean family income in the census tract. The dataset’s average home has 1,333 square feet of livable space, 2.58 bedrooms and 1.07 bathrooms, with its cost at about $270,000.
+*Note: Transformed from continuous into categorical in the regression model.
+
+The Hedonic Pricing Model divides the total cost of property into separate costs for each characteristic according to different subgroups.[@mayor2009hedonic;@scotchmer1985hedonic] In this study, twenty-two variables are selected for the model, as summarized in Table 2.1. These include internal features like total livable area or exterior condition, amenities like crime and distance to nearest water body, as well as spatial contexts like mean family income in the census tract. The dataset’s average home has 1,333 square feet of livable space, 2.58 bedrooms and 1.07 bathrooms, with its cost at about $270,000.
 
 ```{r}
 numericVars <- 
@@ -322,8 +324,7 @@ Correlation of sale price and other numeric variables are presented in Figure 2.
 #   facet_wrap(~key,nrow=4, scales = 'free_x') +
 #   theme_minimal() +
 #   theme(axis.text = element_blank(), axis.ticks = element_blank())
-```
-```{r}
+
 # all numeric variables
 # model_philly_numeric <- st_drop_geometry(model_philly) %>% 
 #   dplyr::select(sale_price, crime_nn5, 
@@ -340,9 +341,7 @@ Correlation of sale price and other numeric variables are presented in Figure 2.
 #   labs(title = "Price as a function of continuous variables") +
 #   theme_minimal() +
 #   theme(axis.text = element_blank(), axis.ticks = element_blank())
-  
-```
-```{r}
+
 # all factor variables
 # model_philly_factor <- st_drop_geometry(model_philly) %>% 
 #   dplyr::select(sale_price, 
@@ -363,9 +362,8 @@ Correlation of sale price and other numeric variables are presented in Figure 2.
 #   facet_wrap(~Variable, ncol = 4, scales = "free") +
 #   labs(title = "Price as a function of categorical variables", y = "Mean Price") +
 #   theme_minimal() +
-#   theme(axis.text = element_blank(), axis.ticks = element_blank())
-```
-```{r}
+#   theme(axis.text = element_blank(), axis.ticks = element_blank())  
+
 ## Crime cor
 # model_philly %>%
 #   st_drop_geometry() %>%
@@ -688,8 +686,7 @@ philly <- philly_fac
 
 model_philly <- philly %>%
   filter(toPredict == "MODELLING")
-```
-```{r}
+
 st_drop_geometry(model_philly) %>% 
   dplyr::select(sale_price, total_livable_area, crime_nn5, distance_to_city_hall, Estimate_Mean.family.income..dollars.) %>%
   filter(sale_price <= 2000000 & crime_nn5 <= 1000 & total_livable_area <= 7500) %>%
@@ -833,8 +830,7 @@ inTrain <- createDataPartition(
 # [row,column] select all columns
 philly.training <- model_philly[inTrain,] 
 philly.test <- model_philly[-inTrain,]
-```
-```{r}
+
 reg.training <- lm(sale_price ~ log(total_livable_area+1) + total_livable_area + crime_nn5 + LPSS_PER1000 +
               log(dist1+1) +log(distance_to_city_hall+1) + log(distance_to_nearest_water+1) +
               Estimate_Mean.family.income..dollars. + Percent_White.alone + log(frontage+1) +  
@@ -844,15 +840,14 @@ reg.training <- lm(sale_price ~ log(total_livable_area+1) + total_livable_area +
               separate_utilities + topography + building_code_description_new + zoning + 
               NAME,
     data = st_drop_geometry(philly.training))
-```
-```{r}
+
 kable(summary(reg.training)$coefficients, digits = 3,format = "html",caption = "<b>Table 4.1 OLS Regression Results</b>", align = "ccccc") %>%
   kableExtra::kable_material(lightable_options = c("striped", "hover")) %>%
   scroll_box(height = "300px")
 ```
 
 
-In our model, the features explain approximately 76% of the variation in price (Adjusted R^2^ = `r scales::percent(summary(reg.training)$adj.r.squared, accuracy = 0.01)`) and most of their coefficients are statistically significant (p<0.1). Several features, such as general construction and architectural styles, are converted to categorical variables, allowing their coefficients to be estimated and linked to housing prices. The remaining insignificant coefficients are of neighborhood names or zoning numbers, which are less likely to regroup due to spatial disparities.
+In our model, the features explain approximately 76% of the variation in price (Adjusted R^2^ = `r scales::percent(summary(reg.training)$adj.r.squared, accuracy = 0.01)`) and most of their coefficients are statistically significant (p<0.05). Several features, such as general construction and architectural styles, are converted to categorical variables, allowing their coefficients to be estimated and linked to housing prices. The remaining insignificant coefficients are of neighborhood names or zoning codes, which are less likely to regroup due to spatial disparities.
 
 ## Accuracy: better for sales priced below $1,000,000
 
@@ -917,8 +912,7 @@ reg.cv <-
     
     data = st_drop_geometry(model_philly),
     method = "lm", trControl = fitControl, na.action = na.pass)
-```
-```{r}
+
 kable(reg.cv$results, digits = 3,caption = "<b>Table 4.3 Cross-Validation Results</b>", align = "ccccccc") %>%
   kableExtra::kable_material(lightable_options = c("striped", "hover"))
 ```
@@ -977,8 +971,7 @@ spatialWeights.test <- nb2listw(neighborList.test, style="W")
 philly.test_predict$lagPriceError <- lag.listw(spatialWeights.test, philly.test_predict$sale_price.Error)
 
 philly.test <- philly.test_predict
-```
-```{r}
+
 ggplot() +
   geom_sf(data = nhoods, fill = "grey40", color = "grey", na.rm = T) +
   geom_sf(data = philly.test_predict, aes(colour = q5(sale_price.Error), na.rm = T),
@@ -1095,16 +1088,15 @@ ggplot(data = st_drop_geometry(nhoods_model)) +
     hjust = -.8, vjust = -1, size = 4, color = "#6D9EC1", alpha = .8)
 ```
 
-Upon further examining the relationship between price and MAPE across neighborhoods, it is evident that MAPE decreases as the mean price increases up to $375,000, but starts to rise when the mean price exceeds this threshold. In our model, mean prices between $125,000 and $500,000 are associated with relatively lower MAPE. The spatial pattern of MAPE (figure ) also shows that lower-priced, declining areas tend to have higher MAPE. These two graphs highlight that our model is more effective in neighborhoods with mid-range prices and that the socioeconomic context of neighborhoods impacts pricing.
+Upon further examining the relationship between price and MAPE across neighborhoods, it is evident that MAPE decreases as the mean price increases up to $375,000, but starts to rise when the mean price exceeds this threshold. In our model, mean prices between $125,000 and $500,000 are associated with relatively lower MAPE. The spatial pattern of MAPE (see Figure 4.6) also shows that lower-priced, declining areas tend to have higher MAPE. These two graphs highlight that our model is more effective in neighborhoods with mid-range prices and that the socioeconomic context of neighborhoods impacts pricing.
 
 
-```{r}
+```{r include = FALSE}
 census_api_key("e62580f74ef222beadd9dd2fbaf48ff130b31c4a", overwrite = TRUE)
 acs_variable_list.2022 <- load_variables(2022, #year
                                          "acs5", #five year ACS estimates
                                          cache = TRUE)
-```
-```{r include = FALSE}
+
 tracts22 <- get_acs(geography = "tract",
                     variables = c("B01003_001E", "B01001A_001E","B06011_001E"), 
                     year=2022, 
@@ -1149,7 +1141,7 @@ income_table %>%
   kableExtra::kable_material(lightable_options = c("striped", "hover"))
 ```
 
-At the urban scale, we compared MAPE across different income contexts to assess the generalizability of our model. Tracts with median incomes above the citywide mean were designated as 'High Income', effectively dividing Philadelphia into two categories. The nearly 1:2 ratio in MAPE highlights a significant difference in the model’s goodness of fit, indicating higher accuracy in predicting housing prices in high-income areas. The neighborhoods with high MAPE (see Figure) fall predominantly within the low-income group, suggesting a connection between race, crime, income, and housing prices.
+At the urban scale, we compared MAPE across different income contexts to assess the generalizability of our model. Tracts with median incomes above the citywide mean were designated as 'High Income', effectively dividing Philadelphia into two categories. The nearly 1:2 ratio in MAPE highlights a significant difference in the model’s goodness of fit, indicating higher accuracy in predicting housing prices in high-income areas. The neighborhoods with high MAPE (see Figure 4.6) fall predominantly within the low-income group, suggesting a connection between race, crime, income, and housing prices.
 
 ## Challenge time
 
@@ -1158,8 +1150,7 @@ Using our model, the predicted values for where ‘toPredict’ is both “MODEL
 ```{r}
 philly_finish <- philly %>%
    mutate(sale_price.Predict = predict(reg.training, philly))
-```
-```{r}
+
 ggplot() +
   geom_sf(data = nhoods, fill = "grey40", color = "grey", na.rm = T) +
   geom_sf(data = philly_finish %>% filter(!is.na(sale_price.Predict)), aes(colour = q5(sale_price.Predict), na.rm = T),
@@ -1179,11 +1170,11 @@ ggplot() +
 
 # Discussion
 
-Our model effectively predicts 76% of the variation in housing prices, particularly with high accuracy for sales priced below $1,000,000. Our logarithmic transformation and piecewise splitting of distance to city hall is both interesting and essential to the model. Other key features such as distance to the city center, neighborhood names, and zoning numbers significantly reduce prediction errors by approximately 20% when included in training. The Mean Absolute Error is `r round(MAE,2)` and the Mean Absolute Percent Error is `r scales::percent(MAPE, accuracy = 0.01)`. Prediction errors remain high due to the dataset's wide price variation and unaccounted factors influencing spatial dynamics. From the perspective of urban context, the model performs poorly in North Philadelphia, where clustering of Hispanic and Black residents presents challenges, and in West Philadelphia, where rising crime and gentrification add complexity. These decaying factors contribute to lower housing prices and a more intricate spatial process. Nonetheless, the model performs well in neighborhoods with mid-range housing prices, where the larger dataset provides stronger training and testing opportunities.
+Our model effectively predicts 76% of the variation in housing prices, particularly with high accuracy for sales priced below $1,000,000. Our logarithmic transformation and piecewise splitting of distance to city hall is both interesting and essential to the model. Other key features such as distance to the city center, neighborhood names, and zoning numbers significantly reduce prediction errors by approximately 20% when included in training. The Mean Absolute Error is $`r round(MAE,2)` and the Mean Absolute Percent Error is `r scales::percent(MAPE, accuracy = 0.01)`. Prediction errors remain high due to the dataset's wide price variation and unaccounted factors influencing spatial dynamics. From the perspective of urban context, the model performs poorly in North Philadelphia, where clustering of Hispanic and Black residents presents challenges, and in West Philadelphia, where rising crime and gentrification add complexity. These decaying factors contribute to lower housing prices and a more intricate spatial process. Nonetheless, the model performs well in neighborhoods with mid-range housing prices, where the larger dataset provides stronger training and testing opportunities.
 
 # Conclusion
 
-I would recommend our model to Zillow for customers looking to predict mid-range housing prices in Philadelphia. The model is well-trained and accounts for internal characteristics, public services/amenities, and spatial features, demonstrating a strong fit within the context of Philadelphia. While there is some spatial autocorrelation present and OLS regression has its limitations, we plan to explore additional socioeconomic factors that influence the spatial process of housing prices and apply multivariate regression techniques to further enhance the model.
+I would recommend our model to Zillow for customers looking to predict mid-range housing prices in Philadelphia. The model is well-trained and accounts for internal characteristics, public services/amenities, and spatial features, demonstrating a strong fit within the context of Philadelphia. While there is some spatial autocorrelation present and OLS regression has its limitations, we plan to explore additional socioeconomic factors that influence the spatial process of housing prices, and apply non-linear regression and other machine learning techniques to further enhance the model.
 
 # References
 
