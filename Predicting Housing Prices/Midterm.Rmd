@@ -44,15 +44,17 @@ library(ckanr)
 library(FNN)
 library(grid)
 library(gridExtra)
-library(ggcorrplot) # plot correlation plot
-library(corrr)      # another way to plot correlation plot
+library(ggcorrplot)
+library(corrr)      
 library(kableExtra)
-library(jtools)     # for regression model plots
-library(ggstance) # to support jtools plots
-library(ggpubr)    # plotting R^2 value on ggplot point scatter
-library(broom.mixed) # needed for effects plots
+library(jtools)     
+library(ggstance) 
+library(ggpubr)    
+library(broom.mixed) 
 library(glue)
 library(classInt)
+library(viridis)
+library(patchwork)
 ```
 
 ```{r setup2, message = FALSE}
@@ -80,11 +82,11 @@ Data Sources: [Philly neighborhoods (nhoods)](https://opendataphilly.org/dataset
 
 ```{r data, echo = FALSE}
 nhoods <- 
-  st_read("data/philadelphia-neighborhoods.geojson") %>%
+  st_read("C:/Data/Fall 2024/CPLN 5920/Code/PPA/Predicting Housing Prices/data/philadelphia-neighborhoods.geojson") %>%
   st_transform('EPSG:2272')
 
 studentData <- 
-  st_read("data/studentData.geojson") %>%
+  st_read("C:/Data/Fall 2024/CPLN 5920/Code/PPA/Predicting Housing Prices/data/studentData.geojson") %>%
   st_transform('EPSG:2272')
 
 # school <- 
@@ -122,29 +124,29 @@ studentData <-
 # census <- 
 #   read.csv("data/census.csv")
 
-descriptions <- read.csv("data/data dictonary-studentdata.csv")
-set <- read.csv("data/set.csv")
+descriptions <- read.csv("C:/Data/Fall 2024/CPLN 5920/Code/PPA/Predicting Housing Prices/data/data dictonary-studentdata.csv")
+set <- read.csv("C:/Data/Fall 2024/CPLN 5920/Code/PPA/Predicting Housing Prices/data/set.csv")
 
-philly <- studentData[,c(74,75,48,3,10,11,14,15,16,17,18,19,20,21,22,23,26,34,35,38,43,44,49,50,55,58,59,60,61,65,66,69,71,72,76)]
+philly <- studentData[,c(74,75,48,11,16,17,18,20,22,26,34,35,44,49,58,60,69,72,76)]
 descriptions <- descriptions %>%
   filter(Field.Name %in% colnames(philly))
 ```
 
 ```{r data_process}
 philly <- philly %>%
-  mutate(PricePerSq = philly$sale_price / philly$total_area) %>%
-  mutate(Age = 2024 - year_built) %>%
-  dplyr::select(- year_built) %>%
-  mutate(Age = case_when(Age == 2024 ~ mean(Age, na.rm = T),
-        TRUE ~ Age)) %>%
+  mutate(PricePerSq = philly$sale_price / philly$total_livable_area) %>%
+  #mutate(Age = 2024 - year_built) %>%
+  #dplyr::select(- year_built) %>%
+  #mutate(Age = case_when(Age == 2024 ~ mean(Age, na.rm = T),
+  #      TRUE ~ Age)) %>%
   st_join(nhoods["NAME"])
 
-descriptions <- rbind(descriptions,
-                      data.frame(
-                        Field.Name = "Age", Alias = "Age", Description = "The age of housings"
-                      ))
-descriptions <- descriptions %>%
-  filter(Field.Name != "year_built")
+#descriptions <- rbind(descriptions,
+#                      data.frame(
+#                        Field.Name = "Age", Alias = "Age", Description = "The age of housings"
+#                      ))
+#descriptions <- descriptions %>%
+#  filter(Field.Name != "year_built")
 ```
 
 ## Feature Engineering
@@ -177,7 +179,7 @@ the ‘average nearest neighbor distance’ from each home sale to its k nearest
 # st_write(phillyCrimes, dsn = 'data/phillyCrimes.geojson')
 
 phillyCrimes <- 
-  st_read("data/phillyCrimes.geojson")
+  st_read("C:/Data/Fall 2024/CPLN 5920/Code/PPA/Predicting Housing Prices/data/phillyCrimes.geojson")
 ```
 
 ```{r crimes_process}
@@ -241,7 +243,7 @@ philly_set <- merge(philly, set, by = "musaID", all.x = FALSE, all.y = FALSE, so
   dplyr::select(-toPredict.y) %>%
   rename(toPredict = toPredict.x) %>%
   mutate(dist1 = ifelse(distance_to_city_hall <= 20000, distance_to_city_hall, 20000))
-philly <- philly_set
+philly <- philly_set %>% select(-distance_to_nearest_metro, -distance_to_nearest_hospital, -distance_to_nearest_school, -distance_to_nearest_park, -NAMELSAD, -Percent_Bachelor.s.degree.or.higher, -Percent_Management..business..science..and.arts.occupations, -Percent_Different.state, -Percent_With.private.health.insurance, -HPSS_PER1000)
 ```
 
 
@@ -256,13 +258,13 @@ model_philly <- philly %>%
 
 ```{r price_map}
 ggplot() +
-  geom_sf(data = nhoods, fill = "grey40", na.rm = T) +
-  geom_sf(data = model_philly, aes(colour = q5(PricePerSq), na.rm = T), 
-          show.legend = "point", size = .75) +
+  geom_sf(data = nhoods, fill = "grey90", na.rm = TRUE) +
+  geom_sf(data = model_philly, aes(colour = q5(sale_price)), 
+          show.legend = "point", size = 0.75) +
   scale_colour_manual(values = palette5,
-                   labels=qBr(philly,"PricePerSq"),
-                   name="Quintile\nBreaks") +
-  labs(title="Price Per Square Foot, Philadelphia") +
+                      labels = qBr(model_philly, "sale_price"),
+                      name = "Quintile\nBreaks") +
+  labs(title = "Sale Price, Philadelphia") +
   theme_void()
 ```
 
@@ -278,10 +280,10 @@ The spatial process of prices: education, income, white...
 
 ```{r}
 stat_philly <- philly %>%
-  dplyr::select(-musaID, -sale_price, -census_tract, -PricePerSq)
+  dplyr::select(-musaID, -sale_price, -PricePerSq, -crimes.Buffer, -crime_nn1, -crime_nn2, -crime_nn3, -crime_nn4)
 
 descriptions_selected <- descriptions %>%
-  filter(!Field.Name %in% c("sale_price", "census_tract")) %>%
+  filter(!Field.Name %in% c("sale_price")) %>%
   dplyr::select(Alias, Description)
 print(descriptions_selected)
 
@@ -296,11 +298,11 @@ stargazer(st_drop_geometry(stat_philly),
 ```{r}
 numericVars <- 
   select_if(st_drop_geometry(model_philly), is.numeric) %>% na.omit() %>%
-  dplyr::select(-musaID, -census_tract, -PricePerSq, -geographic_ward)
+  dplyr::select(-musaID, -PricePerSq, -crimes.Buffer, -crime_nn1, -crime_nn2, -crime_nn3, -crime_nn4)
 
 ggplot(gather(numericVars), aes(value)) +
   geom_histogram(bins = 50) +
-  facet_wrap(~key,nrow=5, scales = 'free_x') +
+  facet_wrap(~key,nrow=4, scales = 'free_x') +
   theme_minimal() +
   theme(axis.text = element_blank(), axis.ticks = element_blank())
 ```
@@ -309,14 +311,12 @@ ggplot(gather(numericVars), aes(value)) +
 ```{r}
 # all numeric variables
 model_philly_numeric <- st_drop_geometry(model_philly) %>% 
-  dplyr::select(sale_price, 
-                depth, frontage, off_street_open, total_area, total_livable_area, Age,
-                distance_to_city_hall, distance_to_nearest_metro, distance_to_nearest_hospital, distance_to_nearest_school,
-                distance_to_nearest_park, distance_to_nearest_water, Percent_Bachelor.s.degree.or.higher,
-                Estimate_Mean.family.income..dollars.,Percent_Management..business..science..and.arts.occupations,
-                Percent_Different.state,Percent_With.private.health.insurance,Percent_White.alone,LPSS_PER1000,HPSS_PER1000
+  dplyr::select(sale_price, crime_nn5, 
+                frontage, total_livable_area, 
+                distance_to_city_hall, distance_to_nearest_water, 
+                Estimate_Mean.family.income..dollars.,Percent_White.alone,LPSS_PER1000
                 ) %>%
-  filter(sale_price <= 1000000, Age < 500) %>%
+  filter(sale_price <= 1000000) %>%
   gather(Variable, Value, -sale_price)
 
 ggplot(model_philly_numeric, aes(Value, sale_price)) +
@@ -328,18 +328,61 @@ ggplot(model_philly_numeric, aes(Value, sale_price)) +
   
 ```
 
+```{r}
+# 加载所需的库
+library(ggplot2)
+library(patchwork)
+
+# 过滤数据并添加标签列
+model_philly_numeric <- st_drop_geometry(model_philly) %>% 
+  dplyr::select(sale_price, distance_to_city_hall) %>%
+  filter(sale_price <= 1000000) %>%
+  mutate(DistanceCategory = ifelse(distance_to_city_hall <= 20000, "<= 20000", "> 20000"))
+
+# 左侧图（距离 <= 20000）
+plot1 <- ggplot(subset(model_philly_numeric, DistanceCategory == "<= 20000"),
+                aes(distance_to_city_hall, sale_price)) +
+  geom_point(size = 0.5, color = "black") +
+  geom_smooth(method = "lm", se = FALSE, color = "#E46726") +
+  ylab("Sale Price") +
+  theme_minimal() +
+  theme(axis.title.x = element_blank())  # 去除 x 轴标签
+
+# 右侧图（距离 > 20000）
+plot2 <- ggplot(subset(model_philly_numeric, DistanceCategory == "> 20000"),
+                aes(distance_to_city_hall, sale_price)) +
+  geom_point(size = 0.5, color = "black") +
+  geom_smooth(method = "lm", se = FALSE, color = "#E46726") +
+  theme_minimal() +
+  theme(axis.title.x = element_blank(),  # 去除 x 轴标签
+        axis.title.y = element_blank(),  # 去除 y 轴标签
+        axis.text.y = element_blank(),   # 去除 y 轴刻度
+        axis.ticks.y = element_blank())  # 去除 y 轴刻度线
+
+# 组合图，并设置整体标题
+combined_plot <- plot1 + plot2 + 
+  plot_layout(widths = c(1, 4)) + 
+  plot_annotation(
+    title = "Price as a function of Distance to City Hall",
+    theme = theme(plot.title = element_text(size = 14, hjust = 0.5))
+  )
+
+# 显示组合图
+combined_plot
+
+```
+
 
 ```{r}
 # all factor variables
 model_philly_factor <- st_drop_geometry(model_philly) %>% 
   dplyr::select(sale_price, 
-                basements, central_air, exterior_condition, fireplaces, fuel, garage_spaces, garage_type, general_construction,
-                interior_condition, number_of_bathrooms, number_of_bedrooms, parcel_shape, quality_grade, separate_utilities, sewer,
-                street_direction, topography, type_heater, view_type, building_code_description_new) %>%
+                central_air, exterior_condition, fireplaces, garage_spaces, general_construction,
+                interior_condition, number_of_bathrooms, number_of_bedrooms, quality_grade, separate_utilities,
+                topography, zoning, building_code_description_new) %>%
   mutate(exterior_condition = as.factor(exterior_condition),
          fireplaces = as.factor(fireplaces),
          garage_spaces = as.factor(garage_spaces),
-         garage_type = as.factor(garage_type),
          interior_condition = as.factor(interior_condition),
          number_of_bathrooms = as.factor(number_of_bathrooms),
          number_of_bedrooms = as.factor(number_of_bedrooms)) %>%
@@ -348,7 +391,7 @@ model_philly_factor <- st_drop_geometry(model_philly) %>%
 
 ggplot(model_philly_factor, aes(Value, sale_price)) +
   geom_bar(position = "dodge", stat = "summary", fun.y = "mean") +
-  facet_wrap(~Variable, ncol = 5, scales = "free") +
+  facet_wrap(~Variable, ncol = 4, scales = "free") +
   labs(title = "Price as a function of categorical variables", y = "Mean Price") +
   theme_minimal() +
   theme(axis.text = element_blank(), axis.ticks = element_blank())
@@ -394,8 +437,8 @@ ggcorrplot(
 
 ```{r}
 st_drop_geometry(model_philly) %>% 
-  dplyr::select(sale_price, total_area, total_livable_area, depth, Age) %>%
-  filter(sale_price <= 1000000, Age < 500) %>%
+  dplyr::select(sale_price, total_livable_area, crime_nn5, distance_to_city_hall, Estimate_Mean.family.income..dollars.) %>%
+  filter(sale_price <= 2000000 & crime_nn5<=1000 & total_livable_area<=7500) %>%
   gather(Variable, Value, -sale_price) %>%
   ggplot(aes(Value, sale_price)) +
   geom_point(size = .5) + geom_smooth(method = "lm", se=F, colour = "#FA7800") +
@@ -409,29 +452,28 @@ st_drop_geometry(model_philly) %>%
 ```{r three_maps}
 ggplot() +
   geom_sf(data = nhoods, fill = "transparent", color ="grey", na.rm = T) +
-  geom_sf(data = philly, aes(colour = q5(Age), na.rm = T), 
+  geom_sf(data = philly, aes(colour = q5(LPSS_PER1000), na.rm = T), 
           show.legend = "point", size = .75) +
   scale_colour_manual(values = palette5,
-                   labels=qBr(philly,"Age"),
+                   labels=qBr(philly,"LPSS_PER1000"),
                    name="Quintile\nBreaks") +
-  labs(title="Age of Housing, Philadelphia") +
+  labs(title="Low Produce Stores, Philadelphia") +
   theme_void()
 
-library(viridis)
 ggplot() +
   geom_sf(data = nhoods, fill = "transparent", color ="grey", na.rm = T) +
-  geom_sf(data = philly, aes(color = building_code_description_new, na.rm = T), 
+  geom_sf(data = philly, aes(color = as.factor(number_of_bathrooms), na.rm = T), 
           show.legend = "point", size = .75) +
   scale_color_viridis(discrete = TRUE, option = "D")+
-  labs(title="Buidling Code Description, Philadelphia") +
+  labs(title="Number of Bathrooms, Philadelphia") +
   theme_void()
 
 ggplot() +
   geom_sf(data = nhoods, fill = "transparent", color ="grey", na.rm = T) +
-  geom_sf(data = philly, aes(color = factor(interior_condition), na.rm = T), 
+  geom_sf(data = philly, aes(color = zoning, na.rm = T), 
           show.legend = "point", size = .75) +
-  scale_color_brewer(palette = "RdYlBu",direction = -1)+
-  labs(title="Number of Bedrooms, Philadelphia") +
+  #scale_color_brewer(palette = "RdYlBu",direction = -1)+
+  labs(title="Zoning, Philadelphia") +
   theme_void()
 
 ```
@@ -440,32 +482,32 @@ ggplot() +
 
 
 ```{r}
-cor_philly <- 
-  st_drop_geometry(model_philly) %>%
-  filter(sale_price <= 1000000,
-         total_livable_area < 10000) %>%
-  dplyr::select(sale_price, total_livable_area)
-
-cor.test(cor_philly$total_livable_area,
-         cor_philly$sale_price, 
-         method = "pearson")
-
-
-# Calculate predicted prices
-cor_philly$predicted_price <- predict(lm(sale_price ~ total_livable_area, data = cor_philly), newdata = cor_philly)
-ggscatter(cor_philly,
-          x = "total_livable_area",
-          y = "sale_price",
-          color = "#6D9EC1", size = 1, alpha = 0.6) +
-  geom_point(aes(y = predicted_price), color = "#E46726", size = 1, alpha = 0.6) +
-  stat_cor(label.x = 4000, label.y = 250000, hjust = 0) +
-  labs(title = "Price as a function of living area", 
-       subtitle = "With predicted prices; Sale prices <= $1 mil.",
-       x = "Total Livable Area",
-       y = "Sale Price") +
-  theme_minimal() +
-  theme(plot.title = element_text(size = 18, face = "bold"),
-        plot.subtitle = element_text(size = 12)) 
+# cor_philly <- 
+#   st_drop_geometry(model_philly) %>%
+#   filter(sale_price <= 1000000,
+#          total_livable_area < 10000) %>%
+#   dplyr::select(sale_price, total_livable_area)
+# 
+# cor.test(cor_philly$total_livable_area,
+#          cor_philly$sale_price, 
+#          method = "pearson")
+# 
+# 
+# # Calculate predicted prices
+# cor_philly$predicted_price <- predict(lm(sale_price ~ total_livable_area, data = cor_philly), newdata = cor_philly)
+# ggscatter(cor_philly,
+#           x = "total_livable_area",
+#           y = "sale_price",
+#           color = "#6D9EC1", size = 1, alpha = 0.6) +
+#   geom_point(aes(y = predicted_price), color = "#E46726", size = 1, alpha = 0.6) +
+#   stat_cor(label.x = 4000, label.y = 250000, hjust = 0) +
+#   labs(title = "Price as a function of living area", 
+#        subtitle = "With predicted prices; Sale prices <= $1 mil.",
+#        x = "Total Livable Area",
+#        y = "Sale Price") +
+#   theme_minimal() +
+#   theme(plot.title = element_text(size = 18, face = "bold"),
+#         plot.subtitle = element_text(size = 12)) 
 ```
 
 ## data再处理
@@ -477,79 +519,55 @@ philly_fac <- philly %>%
       basements %in% c("0", "1", "4", "A") ~ "B",   
       TRUE ~ "A"                               
     ),
-    basements = factor(basements)              
-  )
-
-philly_fac <- philly_fac %>%
-  mutate(
+    basements = factor(basements),
+    
     central_air = case_when(
       central_air %in% c("1", "Y") ~ "Y",  
       TRUE ~ "N"                          
     ),
-    central_air = factor(central_air)      
-  )
-
-philly_fac <- philly_fac %>%
-  mutate(
+    central_air = factor(central_air),
+    
     exterior_condition = case_when(
       is.na(exterior_condition) | exterior_condition == 1 ~ "1",    
       exterior_condition %in% c(2, 3) ~ "2",                        
       exterior_condition == 4 ~ "3",                                
       TRUE ~ "4"                      
     ),
-    exterior_condition = factor(exterior_condition)                 
-  )
-
-philly_fac <- philly_fac %>%
-  mutate(
+    exterior_condition = factor(exterior_condition),
+    
     fireplaces = case_when(
       is.na(fireplaces) | fireplaces == 0 | fireplaces == 1 ~ "0",                    
       TRUE ~ "1"                                
     ),
-    fireplaces = factor(fireplaces)             
-  )
-
-philly_fac <- philly_fac %>%
-  mutate(
+    fireplaces = factor(fireplaces),
+    
     fuel = case_when(
       is.na(fuel) | fuel == "" ~ "X",  
       TRUE ~ "A"                       
     ),
-    fuel = factor(fuel)                
-  )
-
-philly_fac <- philly_fac %>%
-  mutate(
+    fuel = factor(fuel),
+    
     garage_spaces = case_when(
       is.na(garage_spaces) | garage_spaces == 0 ~ "0",    
       garage_spaces == 1 ~ "1",      
       TRUE ~ "2"                     
     ),
-    garage_spaces = factor(garage_spaces)  
-  )
-
-philly_fac <- philly_fac %>%
-  mutate(
+    garage_spaces = factor(garage_spaces),
+    
     general_construction = case_when(       
       general_construction %in% c("A ", "B ", "D ") ~ "A",  
       general_construction == "3 " ~ "C",        
       TRUE ~ "B"                                 
     ),
-    general_construction = factor(general_construction)  
-  )
-
-philly_fac <- philly_fac %>%
-  mutate(
+    general_construction = factor(general_construction),
+    
     interior_condition = case_when(
       interior_condition %in% c(0, 1, 2, 3) ~ "1",         
       interior_condition %in% c(4, NA) ~ "2",        
       TRUE ~ "3"       
     ),
-    interior_condition = factor(interior_condition)  
-  )
-
-philly_fac <- philly_fac %>%
-  mutate(
+    interior_condition = factor(interior_condition),
+    
     number_of_bathrooms = case_when(
       number_of_bathrooms == 0 ~ "0",                   
       number_of_bathrooms == 1 ~ "1",                   
@@ -557,97 +575,71 @@ philly_fac <- philly_fac %>%
       number_of_bathrooms == 3 ~ "3",                   
       TRUE ~ "4"                                        
     ),
-    number_of_bathrooms = factor(number_of_bathrooms)   
-  )
-
-philly_fac <- philly_fac %>%
-  mutate(
+    number_of_bathrooms = factor(number_of_bathrooms),
+    
     number_of_bedrooms = case_when(
       number_of_bedrooms %in% c(0, 31) | is.na(number_of_bedrooms) ~ "0",  
       number_of_bedrooms %in% c(1, 2) ~ "1",    
       number_of_bedrooms == 3 ~ "2",            
       number_of_bedrooms == 4 ~ "3",            
       number_of_bedrooms %in% c(5, 6) ~ "4",    
-      number_of_bedrooms %in% c(7, 8, 9) ~ "5", 
+      number_of_bedrooms %in% c(7, 8, 9) ~ "5" 
     ),
-    number_of_bedrooms = factor(number_of_bedrooms)  
-  )
-
-philly_fac <- philly_fac %>%
-  mutate(
+    number_of_bedrooms = factor(number_of_bedrooms),
+    
     parcel_shape = case_when(
       parcel_shape %in% c("C", "E") ~ "A",  
       parcel_shape == "A" ~ "B",            
       TRUE ~ "C"                            
     ),
-    parcel_shape = factor(parcel_shape)     
-  )
-
-philly_fac <- philly_fac %>%
-  mutate(
+    parcel_shape = factor(parcel_shape),
+    
     quality_grade = case_when(
       quality_grade %in% c("A+", "A", "A-", "X", "X-") ~ "1",           
       quality_grade %in% c("B+", "B", "B-", "3", "S+") ~ "2",
       TRUE ~ "3"                                             
     ),
-    quality_grade = factor(quality_grade)                    
-  )
-
-philly_fac <- philly_fac %>%
-  mutate(
+    quality_grade = factor(quality_grade),
+    
     separate_utilities = case_when(
       separate_utilities %in% c("A", "C") ~ "B",  
       TRUE ~ "A"                                 
     ),
-    separate_utilities = factor(separate_utilities)  
-  )
-
-philly_fac <- philly_fac %>%
-  mutate(
+    separate_utilities = factor(separate_utilities),
+    
     street_direction = case_when(
       is.na(street_direction) | street_direction == "" | street_direction == "S" ~ "A",
       TRUE ~ "B"                           
     ),
-    street_direction = factor(street_direction)  
-  )
-
-philly_fac <- philly_fac %>%
-  mutate(
+    street_direction = factor(street_direction),
+    
     topography = case_when(
       topography == "B" ~ "B",
       TRUE ~ "A"
     ),
-    topography = factor(topography)        
-  )
-
-philly_fac <- philly_fac %>%
-  mutate(
+    topography = factor(topography),
+    
     type_heater = case_when(
       type_heater == "D" ~ "B",            
       TRUE ~ "A"                           
     ),
-    type_heater = factor(type_heater)      
-  )
-
-philly_fac <- philly_fac %>%
-  mutate(
+    type_heater = factor(type_heater),
+    
     building_code_description_new = case_when(
       building_code_description_new %in% c("COLONIAL", "OLD STYLE", "ROW MODERN", "ROW OLD STYLE", "TUDOR", "TWIN BUNGALOW") ~ "1",
       building_code_description_new %in% c("ROW POST WAR", "ROW TYPICAL", "TWIN CONVENTIONAL") ~ "3",
       building_code_description_new %in% c("OTHER", "ROW PORCH FRONT") ~ "4",
-      TRUE ~ "2"  
+      TRUE ~ "2"
     ),
-    building_code_description_new = factor(building_code_description_new)  
+    building_code_description_new = factor(building_code_description_new),
+    
+    NAME = case_when(
+      NAME %in% c("CHINATOWN", "CRESTMONT_FARMS", "EAST_PARK", "MECHANICSVILLE", 
+                  "PENNYPACK_PARK", "UNIVERSITY_CITY", "WISSAHICKON_PARK", "WOODLAND_TERRACE") ~ "OTHERS",
+      TRUE ~ NAME 
+    ),
+    NAME = factor(NAME)
   )
-
-philly <- philly_fac %>%
-  mutate(exterior_condition = as.factor(exterior_condition),
-         fireplaces = as.factor(fireplaces),
-         garage_spaces = as.factor(garage_spaces),
-         garage_type = as.factor(garage_type),
-         interior_condition = as.factor(interior_condition),
-         number_of_bathrooms = as.factor(number_of_bathrooms),
-         number_of_bedrooms = as.factor(number_of_bedrooms))
 
 model_philly <- philly %>%
   filter(toPredict == "MODELLING")
@@ -674,25 +666,25 @@ To improve the model's accuracy and generalizability, we randomly split the data
 
 ```{r}
 inTrain <- createDataPartition(
-              y = paste(model_philly$general_construction, model_philly$interior_condition,
-                        model_philly$building_code_description_new,
-                        model_philly$parcel_shape,model_philly$topography,model_philly$fuel,
-                        model_philly$garage_spaces,model_philly$quality_grade,
-                        model_philly$NAME), 
+              y = paste(model_philly$general_construction, 
+                       model_philly$topography,
+                       model_philly$quality_grade,
+                        model_philly$NAME),
+                        
               p = .60, list = FALSE)
 # [row,column] select all columns
 philly.training <- model_philly[inTrain,] 
 philly.test <- model_philly[-inTrain,]
 ```
 ```{r}
-reg.training <- lm(sale_price ~ 
-    depth + log(frontage+1) + log(total_area+1) + total_livable_area + log(crime_nn3) + 
-    log(dist1+1) +log(distance_to_city_hall+1) + Estimate_Mean.family.income..dollars. + 
-    Percent_White.alone + log(distance_to_nearest_water+1) + HPSS_PER1000 +
-    central_air + exterior_condition + fireplaces + garage_spaces + general_construction + 
-    interior_condition + number_of_bathrooms + number_of_bedrooms + quality_grade + 
-    separate_utilities + topography + building_code_description_new + 
-    NAME,
+reg.training <- lm(sale_price ~ log(total_livable_area+1) + total_livable_area + crime_nn5 + LPSS_PER1000 +
+              log(dist1+1) +log(distance_to_city_hall+1) + log(distance_to_nearest_water+1) +
+              Estimate_Mean.family.income..dollars. + Percent_White.alone + log(frontage+1) +  
+              
+              central_air + exterior_condition + fireplaces + garage_spaces + general_construction + 
+              interior_condition + number_of_bathrooms + number_of_bedrooms + quality_grade + 
+              separate_utilities + topography + building_code_description_new + zoning + 
+              NAME,
     data = st_drop_geometry(philly.training))
 
 stargazer(reg.training, type = "text",title="Regression Results",align=TRUE,no.space=TRUE)
@@ -751,14 +743,15 @@ fitControl <- trainControl(method = "cv", number = 100)
 set.seed(825)
 
 reg.cv <- 
-  train(sale_price ~ 
-    depth + log(frontage+1) + log(total_area+1) + total_livable_area + log(crime_nn3) + 
-    log(dist1+1) +log(distance_to_city_hall+1) + Estimate_Mean.family.income..dollars. + 
-    Percent_White.alone + log(distance_to_nearest_water+1) + HPSS_PER1000 +
-    central_air + exterior_condition + fireplaces + garage_spaces + general_construction + 
-    interior_condition + number_of_bathrooms + number_of_bedrooms + quality_grade + 
-    separate_utilities + topography + building_code_description_new + 
-    NAME,
+  train(sale_price ~ log(total_livable_area+1) + total_livable_area + crime_nn5 + LPSS_PER1000 +
+              log(dist1+1) +log(distance_to_city_hall+1) + log(distance_to_nearest_water+1) +
+              Estimate_Mean.family.income..dollars. + Percent_White.alone + log(frontage+1) +  
+              
+              central_air + exterior_condition + fireplaces + garage_spaces + general_construction + 
+              interior_condition + number_of_bathrooms + number_of_bedrooms + quality_grade + 
+              separate_utilities + topography + building_code_description_new + zoning + 
+              NAME,
+    
     data = st_drop_geometry(model_philly),
     method = "lm", trControl = fitControl, na.action = na.pass)
 
