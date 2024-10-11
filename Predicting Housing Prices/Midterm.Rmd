@@ -28,7 +28,8 @@ pre {
 </style>
 
 ```{r setup, message = FALSE}
-knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, cache = FALSE) 
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, cache = FALSE, fig.show = "asis",
+    fig.align = "center") 
 options(scipen=999)
 
 # Load some libraries
@@ -56,8 +57,8 @@ library(glue)
 library(classInt)
 library(viridis)
 library(patchwork)
+library(corrplot)
 ```
-
 ```{r setup2, message = FALSE}
 
 source("https://raw.githubusercontent.com/urbanSpatial/Public-Policy-Analytics-Landing/master/functions.r")
@@ -67,21 +68,21 @@ palette5 <- colorRampPalette(c("#6D9EC1", "#E46726"))(5)
 
 # Introduction
 
-+ What is the purpose of this project?
-+ Why should we care about it?
-+ What makes this a difficult exercise?
-+ What is your overall modeling strategy?
-+ Briefly summarize your results.
+An improved prediction model for home prices helps stakeholders and government agencies in making better housing policy and marketing decisions. For Zillow, one of the leading real estate companies in United States, developing an accurate, generalizable model for home prices is crucial to providing effective services to customers and enhancing the company’s competitiveness in the industry. However, this is a challenging task as numerous factors affect home prices, and no single model could cover all of them. This study seeks to create a more comprehensive home price model for Philadelphia, aiming to increase both accuracy and generalizability to benefit homebuyers, investors, the company and policymakers.
+
+To achieve this, we applied the Hedonic Pricing Model, which accounts for internal characteristics, amenities/public services and spatial structure to determine property prices. Ordinary Least Square (OLS) regression forms the core of the model, following data cleaning, filtering and reclassification. Tests are conducted to evaluate the accuracy and generalizability of the model. Overall, our model takes a step forward by including local characteristics like citywide spatial structures and neighborhood contexts, and controls mean absolute percentage error (MAPE) to about 36% without introducing more complex algorithms. However, errors are unevenly distributed across different space and groups, indicating the need for further improvement.
 
 # Data
 
-## Data Wrangling
+Before modeling, we processed the data through data gathering from open portals, exploratory data analysis, and feature engineering.
 
-+ Briefly describe your methods for gathering the data.
+## Data Collection
 
-Data Sources: [Philly neighborhoods (nhoods)](https://opendataphilly.org/datasets/philadelphia-neighborhoods/), [housing sale prices (studentData)](https://github.com/mafichman/musa_5080_2024/blob/main/Midterm/data/2023/studentData.geojson), [crime incidents (phillyCrimes)](https://metadata.phila.gov/#home/datasetdetails/5543868920583086178c4f8e/representationdetails/570e7621c03327dc14f4b68d/)
+We reviewed previous studies to identify possible explanatory variables. Following the Hedonic Pricing Model, we sourced internal characteristics from the original dataset, gathered data on amenities (access to various spaces and services) through Open Data Philly portal, and accessed census data to grasp local contexts. Both continuous and categorial data are incorporated, and we chose the average distance to the 5 nearest crimes as an indicator of crime rate after comparing various metrics.[@zaki2022house,@lin2019implementing,@li2021understanding,@aziz2023proximity]
 
-```{r data, echo = FALSE}
+Data Sources: [Philly neighborhoods](https://opendataphilly.org/datasets/philadelphia-neighborhoods/), [housing sale prices (studentData)](https://github.com/mafichman/musa_5080_2024/blob/main/Midterm/data/2023/studentData.geojson), [crime incidents](https://metadata.phila.gov/#home/datasetdetails/5543868920583086178c4f8e/representationdetails/570e7621c03327dc14f4b68d/), [hydrology](https://metadata.phila.gov/#home/datasetdetails/557f30c6dcec614c29ce8b6d/representationdetails/557f30e3c579ea311699bb49/), [food retail access](https://metadata.phila.gov/#home/datasetdetails/568d4b3c13d1bebc0c2a2b0f/representationdetails/5d4c6e160f63a20011c21727/), [zoning](https://www.phila.gov/media/20220909084529/ZONING-QUICK-GUIDE_PCPC_9_9_22.pdf), [census tables](https://data.census.gov/table?g=050XX00US42101$1400000&y=2022&d=ACS%205-Year%20Estimates%20Data%20Profiles)
+
+```{r data, echo = FALSE,quiet = TRUE, results = 'hide'}
 nhoods <- 
   st_read("data/philadelphia-neighborhoods.geojson") %>%
   st_transform('EPSG:2272')
@@ -125,16 +126,15 @@ studentData <-
 # census <- 
 #   read.csv("data/census.csv")
 
-descriptions <- read.csv("data/data dictonary-studentdata.csv")
+descriptions <- read.csv("data/descriptions.csv")
 
 philly <- studentData[,c(74,75,48,11,16,17,18,20,22,26,34,35,44,49,58,60,69,72,76)]
 descriptions <- descriptions %>%
   filter(Field.Name %in% colnames(philly))
 ```
-
 ```{r data_process}
 philly <- philly %>%
-  mutate(PricePerSq = philly$sale_price / philly$total_livable_area) %>%
+  # mutate(PricePerSq = philly$sale_price / philly$total_livable_area) %>%
   #mutate(Age = 2024 - year_built) %>%
   #dplyr::select(- year_built) %>%
   #mutate(Age = case_when(Age == 2024 ~ mean(Age, na.rm = T),
@@ -148,13 +148,6 @@ philly <- philly %>%
 #descriptions <- descriptions %>%
 #  filter(Field.Name != "year_built")
 ```
-
-## Feature Engineering
-
-**Crimes: 2023-2019 (xlm)**
-
-the ‘average nearest neighbor distance’ from each home sale to its k nearest neighbor crimes
-
 ```{r crimes_data, include = FALSE}
 # phillyCrimes_2023 <- read.csv("data/Crimes/2023incidents_part1_part2.csv") %>%
 #   dplyr::select(text_general_code, dispatch_date, lat, lng)
@@ -181,7 +174,6 @@ the ‘average nearest neighbor distance’ from each home sale to its k nearest
 phillyCrimes <- 
   st_read("data/phillyCrimes.geojson")
 ```
-
 ```{r crimes_process}
 philly$crimes.Buffer <- philly %>% 
     st_buffer(660) %>% 
@@ -205,9 +197,6 @@ philly <-
       crime_nn5 = nn_function(st_coordinates(philly), 
                               st_coordinates(phillyCrimes), k = 5)) 
 ```
-
-**Other data (sgz)**
-
 ```{r}
 # city_hall <- metro[metro$Station == 'City Hall', 6]
 # school_elem <- school %>%
@@ -236,8 +225,6 @@ philly <-
 #   left_join(census, by = "NAMELSAD") %>% 
 #   st_join(retail[, c("LPSS_PER1000", "HPSS_PER1000")])
 ```
-
-
 ```{r}
 set <- read.csv("data/set.csv")
 philly_set <- merge(philly, set, by = "musaID", all.x = FALSE, all.y = FALSE, sort = FALSE) %>%
@@ -247,275 +234,337 @@ philly_set <- merge(philly, set, by = "musaID", all.x = FALSE, all.y = FALSE, so
 philly <- philly_set %>% select(-distance_to_nearest_metro, -distance_to_nearest_hospital, -distance_to_nearest_school, -distance_to_nearest_park, -NAMELSAD, -Percent_Bachelor.s.degree.or.higher, -Percent_Management..business..science..and.arts.occupations, -Percent_Different.state, -Percent_With.private.health.insurance, -HPSS_PER1000)
 ```
 
-
-## Exploratory analysis
+## Exploratory Data Analysis
 
 ```{r}
 model_philly <- philly %>%
   filter(toPredict == "MODELLING")
 ```
-
-+ Develop 1 map of your dependent variable (sale price)
-
 ```{r price_map}
 ggplot() +
-  geom_sf(data = nhoods, fill = "grey90", na.rm = TRUE) +
-  geom_sf(data = model_philly, aes(colour = q5(sale_price)), 
-          show.legend = "point", size = 0.75) +
+  geom_sf(data = nhoods, fill = "grey40", color = "grey") +
+  geom_sf(data = model_philly, aes(colour = q5(sale_price)),
+          show.legend = "point", size = .75) +
   scale_colour_manual(values = palette5,
-                      labels = qBr(model_philly, "sale_price"),
-                      name = "Quintile\nBreaks") +
-  labs(title = "Sale Price, Philadelphia") +
-  theme_void()
+                   labels = qBr(model_philly, "sale_price"),
+                   name="Quintile Breaks") +
+  guides(color = guide_legend(override.aes = list(size = 3))) + 
+  labs(title="Sale Price",
+       subtitle = "Philadelphia, 2022",
+       caption = "Figure 2.1") +
+  mapTheme() +
+  theme(plot.title = element_text(size = 18, face = "bold"),
+        plot.subtitle = element_text(size = 12),
+        panel.border = element_rect(colour = "black", fill=NA, size=1))
 ```
 
-+ Present a table of summary statistics with variable descriptions. Sort these variables by their category (internal characteristics, amenities/public services or spatial structure).
-
-Internal characteristics: bed, bath, area, age, garage, floor...
-
-Amenities/public services: crime, distance to CBD/railway stations/schools/hospitals/grocery stores, green space...
-
-The spatial process of prices: education, income, white...
-
-(示例) references [@dubin1998predicting]
+Sale price of homes is the dependent variable to be predicted, and Figure 2.1 showed its spatial distribution across Philadelphia. Higher prices cluster in center city and the far northeast and northwest suburbs, while lower prices concentrate in west Philadelphia and north Philadelphia. This concentric pattern reflects how the city has developed, where the wealthier residents moved to the suburbs, leaving the middle ring less developed.
 
 ```{r}
 stat_philly <- philly %>%
-  dplyr::select(-musaID, -sale_price, -PricePerSq, -crimes.Buffer, -crime_nn1, -crime_nn2, -crime_nn3, -crime_nn4)
+  dplyr::select(-musaID, -sale_price)
 
-descriptions_selected <- descriptions %>%
-  filter(!Field.Name %in% c("sale_price")) %>%
-  dplyr::select(Alias, Description)
-print(descriptions_selected)
+stat_philly_data <- st_drop_geometry(stat_philly)
 
-stargazer(st_drop_geometry(stat_philly), 
-          type = 'text', 
-          title = "Summary Statistics",
-          summary.stat = c("mean", "sd", "min", "max", "n"))
+descriptions$N <- sapply(descriptions$Field.Name, function(field) {
+  sum(!is.na(stat_philly_data[[field]]))
+})
+
+selected_vars <- descriptions$Field.Name[descriptions$Variable.Type %in% c("Categorical*", "Continuous")]
+
+descriptions <- descriptions %>% 
+  rowwise() %>%
+  mutate(
+    Mean = ifelse(Field.Name %in% selected_vars, round(mean(stat_philly_data[[Field.Name]], na.rm = TRUE), 3), NA),
+    StDev = ifelse(Field.Name %in% selected_vars, round(sd(stat_philly_data[[Field.Name]], na.rm = TRUE), 3), NA),
+    Min = ifelse(Field.Name %in% selected_vars, round(min(stat_philly_data[[Field.Name]], na.rm = TRUE), 3), NA),
+    Max = ifelse(Field.Name %in% selected_vars, round(max(stat_philly_data[[Field.Name]], na.rm = TRUE), 3), NA)
+  ) %>%
+  ungroup()
+
+descriptions %>%
+  knitr::kable(caption = "<b>Table2.1 Summary Statistics</b>", align = "cccl") %>%
+  kableExtra::kable_material(lightable_options = c("striped", "hover"))
 ```
 
-+ Include any other maps/graphs/charts you think might be of interest.
+The Hedonic Pricing Model divides the total cost of property into separate costs for each characteristic according to different subgroups.[@mayor2009hedonic,@scotchmer1985hedonic] In this study, twenty-two variables are selected for the model, as summarized in Table 2.1. These include internal features like total livable area or exterior condition, amenities like crime and distance to nearest water body, as well as spatial contexts like mean family income in the census tract. The dataset’s average home has 1,333 square feet of livable space, 2.58 bedrooms and 1.07 bathrooms, with its cost at about $270,000.
 
 ```{r}
 numericVars <- 
   select_if(st_drop_geometry(model_philly), is.numeric) %>% na.omit() %>%
-  dplyr::select(-musaID, -PricePerSq, -crimes.Buffer, -crime_nn1, -crime_nn2, -crime_nn3, -crime_nn4)
+  dplyr::select(-musaID)
 
-ggplot(gather(numericVars), aes(value)) +
-  geom_histogram(bins = 50) +
-  facet_wrap(~key,nrow=4, scales = 'free_x') +
-  theme_minimal() +
-  theme(axis.text = element_blank(), axis.ticks = element_blank())
+cor_matrix <- cor(numericVars, use = "complete.obs")
+
+corrplot(
+  cor_matrix,
+  method = "color",                             
+  col = colorRampPalette(c("#6D9EC1", "white", "#E46726"))(200),  
+  type = "lower",                               
+  tl.pos = "l",                                 
+  tl.col = "black",                      
+  tl.cex = 0.7,                           
+  mar = c(0, 0, 3, 0)                           
+)
+
+
+title(main = "Correlation across numeric variables", cex.main = 1.5, font.main = 2)
+mtext("Figure 2.2", side = 1, line = 4, adj = 0.2, cex = .8)
+
+
 ```
 
+Correlation of sale price and other numeric variables are presented in Figure 2.2. Mean family income shows the strongest correlation with sale price (coefficient = 0.645), followed by total livable area. Exterior and interior conditions have the highest negative correlations. Some variables exhibit high autocorrelation, which may affect interpretability of the coefficients in the final model.
 
+```{r}
+# ggplot(gather(numericVars), aes(value)) +
+#   geom_histogram(bins = 50) +
+#   facet_wrap(~key,nrow=4, scales = 'free_x') +
+#   theme_minimal() +
+#   theme(axis.text = element_blank(), axis.ticks = element_blank())
+```
 ```{r}
 # all numeric variables
-model_philly_numeric <- st_drop_geometry(model_philly) %>% 
-  dplyr::select(sale_price, crime_nn5, 
-                frontage, total_livable_area, 
-                distance_to_city_hall, distance_to_nearest_water, 
-                Estimate_Mean.family.income..dollars.,Percent_White.alone,LPSS_PER1000
-                ) %>%
-  filter(sale_price <= 1000000) %>%
-  gather(Variable, Value, -sale_price)
-
-ggplot(model_philly_numeric, aes(Value, sale_price)) +
-  geom_point(size = .5) + geom_smooth(method = "lm", se=F, colour = "#E46726") +
-  facet_wrap(~Variable, ncol = 4, scales = "free") +
-  labs(title = "Price as a function of continuous variables") +
-  theme_minimal() +
-  theme(axis.text = element_blank(), axis.ticks = element_blank())
+# model_philly_numeric <- st_drop_geometry(model_philly) %>% 
+#   dplyr::select(sale_price, crime_nn5, 
+#                 frontage, total_livable_area, 
+#                 distance_to_city_hall, distance_to_nearest_water, 
+#                 Estimate_Mean.family.income..dollars.,Percent_White.alone,LPSS_PER1000
+#                 ) %>%
+#   filter(sale_price <= 1000000) %>%
+#   gather(Variable, Value, -sale_price)
+# 
+# ggplot(model_philly_numeric, aes(Value, sale_price)) +
+#   geom_point(size = .5) + geom_smooth(method = "lm", se=F, colour = "#E46726") +
+#   facet_wrap(~Variable, ncol = 4, scales = "free") +
+#   labs(title = "Price as a function of continuous variables") +
+#   theme_minimal() +
+#   theme(axis.text = element_blank(), axis.ticks = element_blank())
   
 ```
+```{r}
+# all factor variables
+# model_philly_factor <- st_drop_geometry(model_philly) %>% 
+#   dplyr::select(sale_price, 
+#                 central_air, exterior_condition, fireplaces, garage_spaces, general_construction,
+#                 interior_condition, number_of_bathrooms, number_of_bedrooms, quality_grade, separate_utilities,
+#                 topography, zoning, building_code_description_new) %>%
+#   mutate(exterior_condition = as.factor(exterior_condition),
+#          fireplaces = as.factor(fireplaces),
+#          garage_spaces = as.factor(garage_spaces),
+#          interior_condition = as.factor(interior_condition),
+#          number_of_bathrooms = as.factor(number_of_bathrooms),
+#          number_of_bedrooms = as.factor(number_of_bedrooms)) %>%
+#   filter(sale_price <= 1000000) %>%
+#   gather(Variable, Value, -sale_price)
+# 
+# ggplot(model_philly_factor, aes(Value, sale_price)) +
+#   geom_bar(position = "dodge", stat = "summary", fun.y = "mean") +
+#   facet_wrap(~Variable, ncol = 4, scales = "free") +
+#   labs(title = "Price as a function of categorical variables", y = "Mean Price") +
+#   theme_minimal() +
+#   theme(axis.text = element_blank(), axis.ticks = element_blank())
+```
+```{r}
+## Crime cor
+# model_philly %>%
+#   st_drop_geometry() %>%
+#   dplyr::select(sale_price, starts_with("crime")) %>%
+#   filter(sale_price <= 1000000) %>%
+#   gather(Variable, Value, -sale_price) %>% 
+#    ggplot(aes(Value, sale_price)) +
+#      geom_point(size = .5) + geom_smooth(method = "lm", se=F, colour = "#E46726") +
+#      facet_wrap(~Variable, nrow = 1, scales = "free") +
+#      labs(title = "Price as a function of crimes") +
+#      theme_minimal()
+```
+
+## Feature Engineering
+
+Transformations of variables can sometimes improve model performance. Three types of transformations are applied in this study: logarithmic transformation, reclassification, and piecewise splitting, with examples shown below.
 
 ```{r}
-# 加载所需的库
-library(ggplot2)
-library(patchwork)
+model_philly_numeric <- st_drop_geometry(model_philly) %>% 
+  mutate(total_livable_area_log = log(total_livable_area + 1)) %>%
+  dplyr::select(total_livable_area, total_livable_area_log) %>%
+  filter(total_livable_area <= 2000000)
 
-# 过滤数据并添加标签列
+plot1 <- ggplot(model_philly_numeric, aes(x = total_livable_area)) +
+  geom_histogram(bins = 30, fill = "#6D9EC1", color = "black", alpha = 0.5) +
+  labs(title = "Original Total Livable Area") +
+  xlim(0, 7500) + 
+  coord_cartesian(ylim = c(0, 8000)) + 
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 12, hjust = 0.5),
+    axis.title.x = element_blank()
+  )
+
+
+plot2 <- ggplot(model_philly_numeric, aes(x = total_livable_area_log)) +
+  geom_histogram(bins = 30, fill = "#6D9EC1", color = "black", alpha = 0.5) +
+  labs(title = "Log-transformed Total Livable Area") +
+  xlim(5, 9) + 
+  coord_cartesian(ylim = c(0, 8000)) +  
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 12, hjust = 0.5),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank() 
+  )
+
+
+combined_plot <- plot1 + plot2 + 
+  plot_layout(widths = c(1, 1)) + 
+  plot_annotation(
+    title = "Distribution of Total Livable Area",
+       caption = "Figure 2.3",
+    theme = theme(plot.title = element_text(size = 18, face = "bold"),
+    plot.caption = element_text(hjust = 0))
+  )
+
+combined_plot
+```
+
+Figure 2.3 shows a typical use of log-transformation to the variable total livable area, making a right-skewed distribution more normal, fitting the assumptions of the OLS framework better. 
+
+```{r}
+philly_f <- philly %>% 
+  mutate(
+    exterior_condition = case_when(
+      is.na(exterior_condition) | exterior_condition == 1 ~ "1",
+      exterior_condition %in% c(2, 3) ~ "2",
+      exterior_condition == 4 ~ "3",
+      TRUE ~ "4"
+    ),
+    exterior_condition = factor(exterior_condition)
+  )
+
+count_data <- philly %>%
+  group_by(exterior_condition) %>%
+  summarise(count = n())
+
+mean_price_data <- philly %>%
+  group_by(exterior_condition) %>%
+  summarise(mean_sale_price = mean(sale_price, na.rm = TRUE))
+
+count_data_f <- philly_f %>%
+  group_by(exterior_condition) %>%
+  summarise(count = n())
+
+mean_price_data_f <- philly_f %>%
+  group_by(exterior_condition) %>%
+  summarise(mean_sale_price = mean(sale_price, na.rm = TRUE))
+
+
+plot1 <- ggplot(count_data, aes(x = exterior_condition, y = count)) +
+  geom_bar(stat = "identity", fill = "#6D9EC1", alpha = 0.8, width = 0.6) +
+  theme_minimal() +
+  theme(
+    legend.position = "none", 
+    plot.title = element_text(size = 12),
+    axis.title.x = element_blank()
+  )
+
+plot2 <- ggplot(mean_price_data, aes(x = exterior_condition, y = mean_sale_price)) +
+  geom_bar(stat = "identity", fill = "#E46726", alpha = 0.8, width = 0.6) +
+  theme_minimal() +
+  theme(
+    legend.position = "none", 
+    plot.title = element_text(size = 12),
+    axis.title.x = element_blank()
+  )
+
+plot3 <- ggplot(count_data_f, aes(x = exterior_condition, y = count)) +
+  geom_bar(stat = "identity", fill = "#6D9EC1", alpha = 0.8, width = 0.6) +  
+  theme_minimal() +
+  theme(
+    legend.position = "none", 
+    plot.title = element_text(size = 12),
+    axis.title.x = element_blank()
+  )
+
+plot4 <- ggplot(mean_price_data_f, aes(x = exterior_condition, y = mean_sale_price)) +
+  geom_bar(stat = "identity", fill = "#E46726", alpha = 0.8, width = 0.6) +  
+  theme_minimal() +
+  theme(
+    legend.position = "none", 
+    plot.title = element_text(size = 12),
+    axis.title.x = element_blank()
+  )
+
+
+combined_plot <- (plot1 | plot2) / (plot3 | plot4) + 
+  plot_annotation(
+    title = "Exterior Condition and Sale Price",
+    subtitle = "Before (Left) and After (Right) Reclassification",
+    caption = "Figure 2.4",
+    theme = theme(plot.title = element_text(size = 18, face = "bold"),
+    plot.caption = element_text(hjust = 0))
+  )
+
+combined_plot
+
+```
+
+Reclassification includes converting a numeric variable into categorial one, and recoding it into fewer categories, as Figure 2.4. This applies to variables that have too few observations in some categories or have mere differences across categories, making the model more robust.
+
+```{r}
+
 model_philly_numeric <- st_drop_geometry(model_philly) %>% 
   dplyr::select(sale_price, distance_to_city_hall) %>%
   filter(sale_price <= 1000000) %>%
   mutate(DistanceCategory = ifelse(distance_to_city_hall <= 20000, "<= 20000", "> 20000"))
 
-# 左侧图（距离 <= 20000）
 plot1 <- ggplot(subset(model_philly_numeric, DistanceCategory == "<= 20000"),
                 aes(distance_to_city_hall, sale_price)) +
-  geom_point(size = 0.5, color = "black") +
+  geom_point(size = 0.5, color = "#6D9EC1", alpha = 0.5) +
   geom_smooth(method = "lm", se = FALSE, color = "#E46726") +
   ylab("Sale Price") +
+  ggtitle("<= 20000") +  # 添加小标题
+  scale_x_continuous(breaks = seq(0, 20000, by = 10000)) +
   theme_minimal() +
-  theme(axis.title.x = element_blank())  # 去除 x 轴标签
+  theme(axis.title.x = element_blank(),
+        plot.title = element_text(size = 12, hjust = 0.5)) 
 
-# 右侧图（距离 > 20000）
 plot2 <- ggplot(subset(model_philly_numeric, DistanceCategory == "> 20000"),
                 aes(distance_to_city_hall, sale_price)) +
-  geom_point(size = 0.5, color = "black") +
+  geom_point(size = 0.5, color = "#6D9EC1", alpha = 0.5) +
   geom_smooth(method = "lm", se = FALSE, color = "#E46726") +
+  ggtitle("> 20000") +  # 添加小标题
   theme_minimal() +
-  theme(axis.title.x = element_blank(),  # 去除 x 轴标签
-        axis.title.y = element_blank(),  # 去除 y 轴标签
-        axis.text.y = element_blank(),   # 去除 y 轴刻度
-        axis.ticks.y = element_blank())  # 去除 y 轴刻度线
+  theme(axis.title.x = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        plot.title = element_text(size = 12, hjust = 0.5)) 
 
-# 组合图，并设置整体标题
 combined_plot <- plot1 + plot2 + 
   plot_layout(widths = c(1, 4)) + 
   plot_annotation(
     title = "Price as a function of Distance to City Hall",
-    theme = theme(plot.title = element_text(size = 14, hjust = 0.5))
+    caption = "Figure 2.5",
+    theme = theme(plot.title = element_text(size = 18, face = 'bold'),
+                  plot.caption = element_text(hjust = 0))
   )
 
-# 显示组合图
 combined_plot
 
 ```
 
-
-```{r}
-# all factor variables
-model_philly_factor <- st_drop_geometry(model_philly) %>% 
-  dplyr::select(sale_price, 
-                central_air, exterior_condition, fireplaces, garage_spaces, general_construction,
-                interior_condition, number_of_bathrooms, number_of_bedrooms, quality_grade, separate_utilities,
-                topography, zoning, building_code_description_new) %>%
-  mutate(exterior_condition = as.factor(exterior_condition),
-         fireplaces = as.factor(fireplaces),
-         garage_spaces = as.factor(garage_spaces),
-         interior_condition = as.factor(interior_condition),
-         number_of_bathrooms = as.factor(number_of_bathrooms),
-         number_of_bedrooms = as.factor(number_of_bedrooms)) %>%
-  filter(sale_price <= 1000000) %>%
-  gather(Variable, Value, -sale_price)
-
-ggplot(model_philly_factor, aes(Value, sale_price)) +
-  geom_bar(position = "dodge", stat = "summary", fun.y = "mean") +
-  facet_wrap(~Variable, ncol = 4, scales = "free") +
-  labs(title = "Price as a function of categorical variables", y = "Mean Price") +
-  theme_minimal() +
-  theme(axis.text = element_blank(), axis.ticks = element_blank())
-```
-
-```{r}
-## Crime cor
-model_philly %>%
-  st_drop_geometry() %>%
-  dplyr::select(sale_price, starts_with("crime")) %>%
-  filter(sale_price <= 1000000) %>%
-  gather(Variable, Value, -sale_price) %>% 
-   ggplot(aes(Value, sale_price)) +
-     geom_point(size = .5) + geom_smooth(method = "lm", se=F, colour = "#E46726") +
-     facet_wrap(~Variable, nrow = 1, scales = "free") +
-     labs(title = "Price as a function of crimes") +
-     theme_minimal()
-```
-
-+ Present a correlation matrix
-
-this plot shows features that may be colinear, such as ...
-(These two features are ‘colinear’, or correlated with one another, so if both are input into the regression, one is insignificant. In such an instance, retain the feature that leads to a more accurate and generalizable model.)
-
-```{r}
-ggcorrplot(
-  round(cor(numericVars), 1), 
-  p.mat = cor_pmat(numericVars),
-  colors = c("#6D9EC1", "white", "#E46726"),
-  type="lower",
-  insig = "blank", outline.col = "grey90") +  
-    labs(title = "Correlation across numeric variables") +
-  theme(axis.text = element_text(size = 1))
-```
-
-(exploratory analysis goes beyond just correlation. Keep in mind that good exploratory analysis adds valuable context, particularly for non-technical audiences. )
-
-## Feature Selection
-
-(feature engineering like recoding Style into fewer categories, or converting NUM_FLOORS from numeric to categorical, could lead to a significant improvement in a predictive model.)
-
-+ Present 4 home price correlation scatterplots that you think are of interest. I’m going to look for interesting open data that you’ve integrated with the home sale observations.
-
-```{r}
-st_drop_geometry(model_philly) %>% 
-  dplyr::select(sale_price, total_livable_area, crime_nn5, distance_to_city_hall, Estimate_Mean.family.income..dollars.) %>%
-  filter(sale_price <= 2000000 & crime_nn5<=1000 & total_livable_area<=7500) %>%
-  gather(Variable, Value, -sale_price) %>%
-  ggplot(aes(Value, sale_price)) +
-  geom_point(size = .5) + geom_smooth(method = "lm", se=F, colour = "#FA7800") +
-  facet_wrap(~Variable, ncol = 2, scales = "free") +
-  labs(title = "Price as a function of continuous variables") +
-  theme_minimal()
-```
-
-+ Develop 3 maps of 3 of your most interesting independent variables.
-
-```{r three_maps}
-ggplot() +
-  geom_sf(data = nhoods, fill = "transparent", color ="grey", na.rm = T) +
-  geom_sf(data = philly, aes(colour = q5(LPSS_PER1000), na.rm = T), 
-          show.legend = "point", size = .75) +
-  scale_colour_manual(values = palette5,
-                   labels=qBr(philly,"LPSS_PER1000"),
-                   name="Quintile\nBreaks") +
-  labs(title="Low Produce Stores, Philadelphia") +
-  theme_void()
-
-ggplot() +
-  geom_sf(data = nhoods, fill = "transparent", color ="grey", na.rm = T) +
-  geom_sf(data = philly, aes(color = as.factor(number_of_bathrooms), na.rm = T), 
-          show.legend = "point", size = .75) +
-  scale_color_viridis(discrete = TRUE, option = "D")+
-  labs(title="Number of Bathrooms, Philadelphia") +
-  theme_void()
-
-ggplot() +
-  geom_sf(data = nhoods, fill = "transparent", color ="grey", na.rm = T) +
-  geom_sf(data = philly, aes(color = zoning, na.rm = T), 
-          show.legend = "point", size = .75) +
-  #scale_color_brewer(palette = "RdYlBu",direction = -1)+
-  labs(title="Zoning, Philadelphia") +
-  theme_void()
-
-```
-
-**?? pearson correlation**
-
-
-```{r}
-# cor_philly <- 
-#   st_drop_geometry(model_philly) %>%
-#   filter(sale_price <= 1000000,
-#          total_livable_area < 10000) %>%
-#   dplyr::select(sale_price, total_livable_area)
-# 
-# cor.test(cor_philly$total_livable_area,
-#          cor_philly$sale_price, 
-#          method = "pearson")
-# 
-# 
-# # Calculate predicted prices
-# cor_philly$predicted_price <- predict(lm(sale_price ~ total_livable_area, data = cor_philly), newdata = cor_philly)
-# ggscatter(cor_philly,
-#           x = "total_livable_area",
-#           y = "sale_price",
-#           color = "#6D9EC1", size = 1, alpha = 0.6) +
-#   geom_point(aes(y = predicted_price), color = "#E46726", size = 1, alpha = 0.6) +
-#   stat_cor(label.x = 4000, label.y = 250000, hjust = 0) +
-#   labs(title = "Price as a function of living area", 
-#        subtitle = "With predicted prices; Sale prices <= $1 mil.",
-#        x = "Total Livable Area",
-#        y = "Sale Price") +
-#   theme_minimal() +
-#   theme(plot.title = element_text(size = 18, face = "bold"),
-#         plot.subtitle = element_text(size = 12)) 
-```
-
-## data再处理
+Cutting continuous variables into pieces is a way of dealing with non-linear relationships, as is shown in Figure 3.3. The sale price sharply decreases and slightly goes up as distance to city hall increases, reflecting the concentric development structure discussed in Figure 2.5. In this case, we added a “dist1” variable, assigning actual values if its distance is less than 20000 ft, or 20000 ft otherwise. This transformation will help achieve the effect of piecewise function in linear regressions. 
 
 ```{r}
 philly_fac <- philly %>%
   mutate(
+    # basements = case_when(
+    #   basements %in% c("0", "1", "4", "A") ~ "B",   
+    #   TRUE ~ "A"                               
+    # ),
+    # basements = factor(basements),
+    
     central_air = case_when(
       central_air %in% c("1", "Y") ~ "Y",  
       TRUE ~ "N"                          
@@ -535,6 +584,12 @@ philly_fac <- philly %>%
       TRUE ~ "1"                                
     ),
     fireplaces = factor(fireplaces),
+    
+    # fuel = case_when(
+    #   is.na(fuel) | fuel == "" ~ "X",  
+    #   TRUE ~ "A"                       
+    # ),
+    # fuel = factor(fuel),
     
     garage_spaces = case_when(
       is.na(garage_spaces) | garage_spaces == 0 ~ "0",    
@@ -576,6 +631,13 @@ philly_fac <- philly %>%
     ),
     number_of_bedrooms = factor(number_of_bedrooms),
     
+    # parcel_shape = case_when(
+    #   parcel_shape %in% c("C", "E") ~ "A",  
+    #   parcel_shape == "A" ~ "B",            
+    #   TRUE ~ "C"                            
+    # ),
+    # parcel_shape = factor(parcel_shape),
+    
     quality_grade = case_when(
       quality_grade %in% c("A+", "A", "A-", "X", "X-") ~ "1",           
       quality_grade %in% c("B+", "B", "B-", "3", "S+") ~ "2",
@@ -589,11 +651,23 @@ philly_fac <- philly %>%
     ),
     separate_utilities = factor(separate_utilities),
     
+    # street_direction = case_when(
+    #   is.na(street_direction) | street_direction == "" | street_direction == "S" ~ "A",
+    #   TRUE ~ "B"                           
+    # ),
+    # street_direction = factor(street_direction),
+    
     topography = case_when(
       topography == "B" ~ "B",
       TRUE ~ "A"
     ),
     topography = factor(topography),
+    
+    # type_heater = case_when(
+    #   type_heater == "D" ~ "B",            
+    #   TRUE ~ "A"                           
+    # ),
+    # type_heater = factor(type_heater),
     
     building_code_description_new = case_when(
       building_code_description_new %in% c("COLONIAL", "OLD STYLE", "ROW MODERN", "ROW OLD STYLE", "TUDOR", "TWIN BUNGALOW") ~ "1",
@@ -610,22 +684,134 @@ philly_fac <- philly %>%
     ),
     NAME = factor(NAME)
   )
-
 philly <- philly_fac
+
 model_philly <- philly %>%
   filter(toPredict == "MODELLING")
 ```
+```{r}
+st_drop_geometry(model_philly) %>% 
+  dplyr::select(sale_price, total_livable_area, crime_nn5, distance_to_city_hall, Estimate_Mean.family.income..dollars.) %>%
+  filter(sale_price <= 2000000 & crime_nn5 <= 1000 & total_livable_area <= 7500) %>%
+  gather(Variable, Value, -sale_price) %>%
+  ggplot(aes(Value, sale_price)) +
+  geom_point(size = 0.5, colour = "#6D9EC1", alpha = 0.5) +  
+  geom_smooth(method = "lm", se = FALSE, colour = "#E46726") + 
+  facet_wrap(~Variable, ncol = 2, scales = "free") +
+  labs(title = "Price as a function of continuous variables",
+       caption = "Figure 2.6") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 18, face = "bold"),
+    plot.caption = element_text(hjust = 0)
+  )
+```
 
+Figure 2.6 includes scatterplots for sale price against four selected continuous variables. Besides “distance to city hall” we have addressed, positive relationships between sale price and the other three variables are explicit. The points in the plots are dispersed rather than being around the line, showing the sense of Hedonic Pricing Model’s aim to value all services to define a total price, reducing the variance from any single variable.
+
+```{r map1}
+ggplot() +
+  geom_sf(data = nhoods, , fill = "grey40", color = "grey", na.rm = T) +
+  geom_sf(data = philly %>% filter(!is.na(LPSS_PER1000)), aes(colour = q5(LPSS_PER1000)), 
+          show.legend = "point", size = .75) +
+  scale_colour_manual(values = palette5,
+                   labels=qBr(philly,"LPSS_PER1000"),
+                   name="Quintile\nBreaks") +
+  guides(color = guide_legend(override.aes = list(size = 3))) + 
+  labs(title="Low-Produce Supply Stores",
+       subtitle = "per 1000 People",
+       caption = "Figure 2.7") +
+  mapTheme() +
+  theme(plot.title = element_text(size = 18, face = "bold"),
+        plot.subtitle = element_text(size = 12),
+        panel.border = element_rect(colour = "black", fill=NA, size=1))
+```
+
+Low-produce supply stores (LPSS) include dollar stores, pharmacies and convenience stores. It is a measure of accessibility to affordable stores, having high density in areas with lower income in north and west Philadelphia, as shown in Figure 2.7. When aligned with other variables, LPSS distinguishes these neighborhoods well and enhances model accuracy.
+
+```{r map2}
+ggplot() +
+  geom_sf(data = nhoods, fill = "grey40", color = "grey", na.rm = T) +
+  geom_sf(data = philly %>% filter(!is.na(exterior_condition)), aes(colour = exterior_condition), 
+          show.legend = "point", size = .75) +
+  scale_colour_manual(values = colorRampPalette(c("#E46726", "#6D9EC1"))(4)
+                   ) +
+  guides(color = guide_legend(override.aes = list(size = 3))) + 
+  labs(title="Exterior Condition",
+       caption = "Figure 2.8") +
+  mapTheme() +
+  theme(plot.title = element_text(size = 18, face = "bold"),
+        plot.subtitle = element_text(size = 12),
+        panel.border = element_rect(colour = "black", fill=NA, size=1))
+```
+
+The spatial distribution of exterior conditions is as Figure 2.8 (1 = best, 4 = worst). Homes with the best exterior conditions are close to the center city, and west Philadelphia shows a mix of both well- and ill-conditioned homes, instead of corresponding only with the wealthiness of the neighborhoods.
+
+```{r map3}
+ggplot() +
+  geom_sf(data = nhoods, fill = "grey40", color = "grey", na.rm = TRUE) +
+  geom_sf(data = philly %>% filter(!is.na(zoning)), aes(colour = zoning), 
+          show.legend = "point", size = 0.75) +
+  scale_colour_manual(values = c(
+    "RM1" = "#FCB951", "RM2" = "#FCB951", "RM3" = "#FCB951", "RM4" = "#FCB951",
+    "RMX1" = "#E58425", "RMX2" = "#E58425", "RMX3" = "#E58425",
+    "RSA1" = "#F8EE68", "RSA2" = "#F8EE68", "RSA3" = "#F8EE68", "RSA4" = "#F8EE68", 
+    "RSA5" = "#F8EE68", "RSA6" = "#F8EE68",
+    "RSD1" = "#FFF5C4", "RSD2" = "#FFF5C4", "RSD3" = "#FFF5C4",
+    "RTA1" = "#CDB650"
+  )) +
+  guides(color = guide_legend(override.aes = list(size = 3), ncol = 2)) + 
+  labs(title = "Zoning", subtitle = "Philadelphia, 2022",
+       caption = "Figure 2.9") +
+  mapTheme() +
+  theme(
+    plot.title = element_text(size = 18, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    panel.border = element_rect(colour = "black", fill = NA, size = 1)
+  )
+
+```
+
+Figure 2.9 visualizes the zoning status, colored in the official colors. The most common type of zoning is RSA (Residential Single-Family Attached). RM (Residential Multi-Family), with higher density, are clustered along Board St, near center city and a couple of areas in west Philadelphia, while RSD (Residential Single-Family Detached), with lower density, are spread across far northwest and northeast suburbs.
+
+```{r}
+# cor_philly <- 
+#   st_drop_geometry(model_philly) %>%
+#   filter(sale_price <= 1000000,
+#          total_livable_area < 10000) %>%
+#   dplyr::select(sale_price, total_livable_area)
+# 
+# cor.test(cor_philly$total_livable_area,
+#          cor_philly$sale_price, 
+#          method = "pearson")
+# 
+# 
+# # Calculate predicted prices
+# cor_philly$predicted_price <- predict(lm(sale_price ~ total_livable_area, data = cor_philly), newdata = cor_philly)
+# ggscatter(cor_philly,
+#           x = "total_livable_area",
+#           y = "sale_price",
+#           color = "#6D9EC1", size = 1, alpha = 0.6) +
+#   geom_point(aes(y = predicted_price), color = "#E46726", size = 1, alpha = 0.6) +
+#   stat_cor(label.x = 4000, label.y = 250000, hjust = 0) +
+#   labs(title = "Price as a function of living area", 
+#        subtitle = "With predicted prices; Sale prices <= $1 mil.",
+#        x = "Total Livable Area",
+#        y = "Sale Price") +
+#   theme_minimal() +
+#   theme(plot.title = element_text(size = 18, face = "bold"),
+#         plot.subtitle = element_text(size = 12)) 
+```
 
 # Methods
 
-Briefly describe your method (remember who your audience is).
+The core of our algorithm is Ordinary Least Square (OLS) regression model. We used 9 continuous variables and 13 reclassified categorical variables as independent variables and sale price as the dependent variable. 
 
-a)  data cleaning
-b)	Exploratory Data Analysis
-c)  OLS Regression
-d)  additional analyses (k-fold cross-validation, Moran's I...)
-e)  software
+To build and evaluate our model, we split the dataset into two parts: 60% as the training set to fit the model, and 40% as the test set to evaluate its accuracy. The model was tested using Mean Absolute Error (MAE), Mean Absolute Percentage Error (MAPE) and prediction v.s. actual value scatter plot.
+
+To ensure the accuracy of the model, we applied a 100-fold cross validation process. This divides the data into 100 subsets, repeatedly testing the model to see how well it performs across different samples. Finally, we examined the generalizability of the model across different neighborhood contexts by observing the distribution of spatial lag, calculating Moran’s I (a measure of spatial clustering in model errors), and testing the model in different neighborhood settings.
+
+Analyses were conducted using R version 4.4.1.
 
 # Results
 
@@ -660,7 +846,7 @@ reg.training <- lm(sale_price ~ log(total_livable_area+1) + total_livable_area +
     data = st_drop_geometry(philly.training))
 ```
 ```{r}
-kable(summary(reg.training)$coefficients, digits = 3,format = "html",caption = "OLS Regression Results", align = "ccccc") %>%
+kable(summary(reg.training)$coefficients, digits = 3,format = "html",caption = "<b>Table 4.1 OLS Regression Results</b>", align = "ccccc") %>%
   kableExtra::kable_material(lightable_options = c("striped", "hover")) %>%
   scroll_box(height = "300px")
 ```
@@ -687,11 +873,11 @@ MAPE <- mean(philly.test$sale_price.APE, na.rm = T)
 acc <- data.frame(MAE, MAPE)
 
 acc %>%
-  knitr::kable(caption = "MAE and MAPE of the testing dataset", align = "cc") %>%
+  knitr::kable(caption = "<b>Table 4.2 MAE and MAPE of the testing dataset</b>", align = "cc") %>%
   kableExtra::kable_material(lightable_options = c("striped", "hover"))
 ```
 
-The Mean Absolute Error (MAE) is `r round(MAE,2)`, representing the average difference between predicted and observed prices. The relatively high value reflects the diversity in housing prices, suggesting a limitation for linear regression. The Mean Absolute Percent Error (MAPE) indicates that the prediction error amounts to `r scales::percent(MAPE, accuracy = 0.01)` of the housing prices on average.
+The Mean Absolute Error (MAE) is $`r round(MAE,2)`, representing the average difference between predicted and observed prices. The relatively high value reflects the diversity in housing prices, suggesting a limitation for linear regression. The Mean Absolute Percent Error (MAPE) indicates that the prediction error amounts to `r scales::percent(MAPE, accuracy = 0.01)` of the housing prices on average.
 
 ```{r}
 ggplot(
@@ -701,9 +887,10 @@ ggplot(
   geom_abline(intercept = 0, slope = 1, color="#E46726",size=1) +
   theme_minimal() +
   theme(plot.title = element_text(size = 18, face = "bold"),
-        plot.subtitle = ggtext::element_markdown(size = 12)) +
+        plot.subtitle = ggtext::element_markdown(size = 12),
+        plot.caption = element_text(hjust = 0)) +
   labs(title = 'Predicted sale price as a function of observed price', 
-       subtitle = glue("<span style='color:#E46726;'>Perfect prediction</span> vs. <span style='color:#6D9EC1;'>Average prediction</span>"),
+       subtitle = glue("<span style='color:#E46726;'>Perfect prediction</span> vs. <span style='color:#6D9EC1;'>Average prediction</span>"),caption = "Figure 4.1",
        x = "Predicted Sale Price",
        y = "Observed Sale Price")
 ```
@@ -731,9 +918,8 @@ reg.cv <-
     data = st_drop_geometry(model_philly),
     method = "lm", trControl = fitControl, na.action = na.pass)
 ```
-
 ```{r}
-kable(reg.cv$results, digits = 3,caption = "Cross-Validation Results", align = "ccccccc") %>%
+kable(reg.cv$results, digits = 3,caption = "<b>Table 4.3 Cross-Validation Results</b>", align = "ccccccc") %>%
   kableExtra::kable_material(lightable_options = c("striped", "hover"))
 ```
 
@@ -744,7 +930,7 @@ SD <- sd(reg.cv$resample[,3])
 stat_MAE <- data.frame(Mean, SD)
 
 stat_MAE %>%
-  knitr::kable(caption = "Mean and standard deviation of the cross-validation MAE", align = "cc") %>%
+  knitr::kable(caption = "<b>Table 4.4 Mean and standard deviation of the cross-validation MAE</b>", align = "cc") %>%
   kableExtra::kable_material(lightable_options = c("striped", "hover"))
 ```
 
@@ -757,10 +943,12 @@ ggplot(data = data.frame(mae = reg.cv$resample[,3]),aes(x = mae)) +
                      labels = function(x) ifelse(x %% 5000 == 0, x, "")) +
   labs(title = "Distribution of MAE", 
        subtitle = "K fold cross validation; k=100.",
+       caption = "Figure 4.2",
        x = "Mean Absolute Error", y = "Count") +
   theme_minimal() +
   theme(plot.title = element_text(size = 18, face = "bold"),
-        plot.subtitle = element_text(size = 12)) +
+        plot.subtitle = element_text(size = 12),
+        plot.caption = element_text(hjust = 0)) +
   geom_vline(aes(xintercept=mean(mae, na.rm=T)),
                color="#E46726", linetype="dashed", size=1) +
   geom_vline(aes(xintercept= MAE),
@@ -790,7 +978,6 @@ philly.test_predict$lagPriceError <- lag.listw(spatialWeights.test, philly.test_
 
 philly.test <- philly.test_predict
 ```
-
 ```{r}
 ggplot() +
   geom_sf(data = nhoods, fill = "grey40", color = "grey", na.rm = T) +
@@ -800,7 +987,8 @@ ggplot() +
                    labels=qBr(philly.test_predict,"sale_price.Error"),
                    name="Quintile Breaks") +
   guides(color = guide_legend(override.aes = list(size = 3))) +
-  labs(title="Sale price errors on the test set") +
+  labs(title="Sale price errors on the test set",
+       caption = "Figure 4.3") +
   mapTheme() +
   theme(plot.title = element_text(size = 18, face = "bold"),
         plot.subtitle = element_text(size = 12),
@@ -815,13 +1003,15 @@ cor_error <- cor(philly.test_predict$lagPriceError, philly.test_predict$sale_pri
 ggplot(philly.test_predict, aes(x = lagPriceError, y = sale_price.Error))+
      geom_point(size = .5, color = "#6D9EC1") + geom_smooth(method = "lm", se=F, colour = "#E46726") +
      labs(title = "Error as a function of the spatial lag of price",
-          x = "Spatial lag of errors (Mean error of 5 nearest neighbors)", y = "Sale price errors") +
+          x = "Spatial lag of errors (Mean error of 5 nearest neighbors)", y = "Sale price errors",
+       caption = "Figure 4.4") +
   annotate(geom = "text", label = paste("Pearson Correlation:", round(cor_error, 3)), # Insert correlation here
     x = -700000, y = -1000000, 
     hjust = 0, vjust = 2, 
     size = 4) +
      theme_minimal() +
-  theme(plot.title = element_text(size = 18, face = "bold"))
+  theme(plot.title = element_text(size = 18, face = "bold"),
+        plot.caption = element_text(hjust = 0))
 ```
 
 Comparing the spatial lag with the actual values helps estimate the degree of spatial autocorrelation. The relationship visualized above shows that as home price errors increase, nearby home price errors tend to rise as well. The correlation is `r round(cor_error,3)`, which is marginal but significant.
@@ -838,13 +1028,15 @@ ggplot(as.data.frame(moranTest$res[c(1:999)]), aes(moranTest$res[c(1:999)])) +
   scale_x_continuous(limits = c(-1, 1)) +
   labs(title="<span style='color:#E46726;'>Observed</span> and <span style='color:#7F7F7F;'>permuted</span> Moran's I",
        x="Moran's I",
-       y="Count") +
+       y="Count",
+       caption = "Figure 4.5") +
   annotate(geom = "text", label = paste("Statistic:", round(moranTest$statistic,3),"\np-value:", moranTest$p.value), # Insert correlation here
     x = 0.2, y = 300, 
     hjust = 0, 
     size = 4) +
   theme_minimal() +
-  theme(plot.title = ggtext::element_markdown(size = 18, face = "bold"))
+  theme(plot.title = ggtext::element_markdown(size = 18, face = "bold"),
+        plot.caption = element_text(hjust = 0))
 ```
 
 Another approach to measure spatial autocorrelation is Moran's I, where a positive value close to one indicates strong positive spatial autocorrelation. The histogram above shows 999 randomly permuted I values, with the observed I marked by the orange line. The observed I, higher than all random permutations, confirms spatial autocorrelation. An I of `r round(moranTest$statistic,3)` seems marginal, but a p-value of `r moranTest$p.value` still indicates statistically significant clustering.
@@ -868,7 +1060,8 @@ ggplot() +
   geom_sf(data = nhoods, fill = "transparent", color = "grey") +
   geom_sf(data = nhoods_model, aes(fill = mean.MAPE), color = "grey") +
   scale_fill_gradient(low = "#6D9EC1", high = "#E46726", name = "MAPE") +
-  labs(title = "Mean test set MAPE by neighborhood") +
+  labs(title = "Mean test set MAPE by neighborhood",
+       caption = "Figure 4.6") +
   mapTheme() +
   theme(plot.title = element_text(size = 18, face = "bold"),
         plot.subtitle = element_text(size = 12),
@@ -892,9 +1085,11 @@ ggplot(data = st_drop_geometry(nhoods_model)) +
                color="#6D9EC1", linetype="dashed", size=.8, alpha = .8) +
   labs(title = "MAPE as a function of mean price by neighborhood",
        x = "Mean Price by Neighborhood",
-       y = "MAPE by Neighborhood") +
+       y = "MAPE by Neighborhood",
+       caption = "Figure 4.7") +
   theme_minimal() +
-  theme(plot.title = element_text(size = 18, face = "bold")) +
+  theme(plot.title = element_text(size = 18, face = "bold"),
+        plot.caption = element_text(hjust = 0)) +
   annotate(geom = "text", label = paste("(275000,0.4)"),
     x = 275000, y = 0.4, 
     hjust = -.8, vjust = -1, size = 4, color = "#6D9EC1", alpha = .8)
@@ -927,20 +1122,19 @@ tracts22 <- get_acs(geography = "tract",
          raceContext = ifelse(percentWhite > .5, "Majority White", "Majority Non-White"),
          incomeContext = ifelse(MedInc > mean(MedInc, na.rm = T), "High Income", "Low Income"))
 ```
-
 ```{r}
 ggplot() + 
   geom_sf(data = tracts22, fill = "transparent", color = "grey") +
   geom_sf(data = na.omit(tracts22), aes(fill = incomeContext), color = "grey90") +
   scale_fill_manual(values = c("#E46726", "#6D9EC1"), name="Income Context") +
   labs(title = "Tracts grouped by income",
-       subtitle = "Philadelphia, 2022") +
+       subtitle = "Philadelphia, 2022",
+       caption = "Figure 4.8") +
   mapTheme() + 
   theme(plot.title = element_text(size = 18, face = "bold"),
         plot.subtitle = element_text(size = 12),
         panel.border = element_rect(colour = "black", fill=NA, size=1))
 ```
-
 ```{r}
 income_table <- st_join(philly.test, tracts22) %>%
   group_by(incomeContext) %>%
@@ -951,7 +1145,7 @@ income_table <- st_join(philly.test, tracts22) %>%
   mutate('No Context' = scales::percent(MAPE))
 
 income_table %>%
-  knitr::kable(caption = "Test set MAPE by tract income context", align = "ccc") %>%
+  knitr::kable(caption = "<b>Table 4.5 Test set MAPE by tract income context</b>", align = "ccc") %>%
   kableExtra::kable_material(lightable_options = c("striped", "hover"))
 ```
 
@@ -965,7 +1159,6 @@ Using our model, the predicted values for where ‘toPredict’ is both “MODEL
 philly_finish <- philly %>%
    mutate(sale_price.Predict = predict(reg.training, philly))
 ```
-
 ```{r}
 ggplot() +
   geom_sf(data = nhoods, fill = "grey40", color = "grey", na.rm = T) +
@@ -976,7 +1169,8 @@ ggplot() +
                    name="Quintile Breaks") +
   guides(color = guide_legend(override.aes = list(size = 3))) +
   labs(title="Predicted Values of 'Modelling' and 'Challenge'",
-       subtitle = "Philadelphia, 2022") +
+       subtitle = "Philadelphia, 2022",
+       caption = "Figure 4.9") +
   mapTheme() +
   theme(plot.title = element_text(size = 18, face = "bold"),
         plot.subtitle = element_text(size = 12),
@@ -985,13 +1179,9 @@ ggplot() +
 
 # Discussion
 
-(Is this an effective model? **What were some of the more interesting variables?**  How much of the variation in prices could you predict? Describe the more important features? Describe the error in your predictions?  According to your maps, could you account the spatial variation in prices?  Where did the model predict particularly well? Poorly? Why do you think this might be?)
-
-Our model effectively predicts 76% of the variation in housing prices, particularly with high accuracy for sales priced below $1,000,000. Key features such as distance to the city center, neighborhood names, and zoning numbers significantly reduce prediction errors by approximately 20% when included in training. The Mean Absolute Error is `r round(MAE,2)` and the Mean Absolute Percent Error is `r scales::percent(MAPE, accuracy = 0.01)`. Prediction errors remain high due to the dataset's wide price variation and unaccounted factors influencing spatial dynamics. From the perspective of urban context, the model performs poorly in North Philadelphia, where clustering of Hispanic and Black residents presents challenges, and in West Philadelphia, where rising crime and gentrification add complexity. These decaying factors contribute to lower housing prices and a more intricate spatial process. Nonetheless, the model performs well in neighborhoods with mid-range housing prices, where the larger dataset provides stronger training and testing opportunities.
+Our model effectively predicts 76% of the variation in housing prices, particularly with high accuracy for sales priced below $1,000,000. Our logarithmic transformation and piecewise splitting of distance to city hall is both interesting and essential to the model. Other key features such as distance to the city center, neighborhood names, and zoning numbers significantly reduce prediction errors by approximately 20% when included in training. The Mean Absolute Error is `r round(MAE,2)` and the Mean Absolute Percent Error is `r scales::percent(MAPE, accuracy = 0.01)`. Prediction errors remain high due to the dataset's wide price variation and unaccounted factors influencing spatial dynamics. From the perspective of urban context, the model performs poorly in North Philadelphia, where clustering of Hispanic and Black residents presents challenges, and in West Philadelphia, where rising crime and gentrification add complexity. These decaying factors contribute to lower housing prices and a more intricate spatial process. Nonetheless, the model performs well in neighborhoods with mid-range housing prices, where the larger dataset provides stronger training and testing opportunities.
 
 # Conclusion
-
-(Would you recommend your model to Zillow? Why or why not? How might you improve this model?)
 
 I would recommend our model to Zillow for customers looking to predict mid-range housing prices in Philadelphia. The model is well-trained and accounts for internal characteristics, public services/amenities, and spatial features, demonstrating a strong fit within the context of Philadelphia. While there is some spatial autocorrelation present and OLS regression has its limitations, we plan to explore additional socioeconomic factors that influence the spatial process of housing prices and apply multivariate regression techniques to further enhance the model.
 
